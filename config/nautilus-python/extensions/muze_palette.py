@@ -56,17 +56,11 @@ def _on_css_dir_changed(_monitor, changed_file, _other_file, event):
     try:
         name = os.path.basename(changed_file.get_path() or "")
     except Exception:
+        name = ""
+    # Be permissive: atomic replace can surface as different event types.
+    if name and name != CSS_NAME:
         return
-    if name != CSS_NAME:
-        return
-    interesting = (
-        Gio.FileMonitorEvent.CHANGED,
-        Gio.FileMonitorEvent.CREATED,
-        Gio.FileMonitorEvent.RENAMED,
-        Gio.FileMonitorEvent.CHANGES_DONE_HINT,
-    )
-    if event in interesting:
-        _schedule_reload()
+    _schedule_reload()
 
 
 def _install():
