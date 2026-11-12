@@ -102,7 +102,14 @@ Terminal=false
 Categories=System;
 EOF
 
-# 7. Ownership (installing into a target home from the live ISO)
+# 7. Nautilus palette extension (live-reloaded by Muze theme tools)
+if [[ -f "$ROOT/config/nautilus-python/extensions/muze_palette.py" ]]; then
+    mkdir -p "$TARGET/.local/share/nautilus-python/extensions"
+    cp "$ROOT/config/nautilus-python/extensions/muze_palette.py" "$TARGET/.local/share/nautilus-python/extensions/"
+    info "nautilus extension -> $TARGET/.local/share/nautilus-python/extensions"
+fi
+
+# 8. Ownership (installing into a target home from the live ISO)
 if [[ -n "$OWNER" ]]; then
     chown -R "$OWNER" "$TARGET/.config" "$TARGET/.local" "$TARGET/Pictures" 2>/dev/null || true
     info "chowned to $OWNER"
