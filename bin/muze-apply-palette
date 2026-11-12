@@ -365,11 +365,14 @@ try:
 except Exception:
     pass
 
-# Restart Nautilus so it reliably picks up the new theme/palette.
+# If Nautilus is running, restart it so it picks up the new theme/palette.
+# If not running, leave it closed (palette files are already updated for next launch).
 try:
-    subprocess.run(['nautilus', '-q'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(['sleep', '0.4'])
-    subprocess.Popen(['nautilus'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    running = subprocess.run(['pgrep', '-x', 'nautilus'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    if running:
+        subprocess.run(['nautilus', '-q'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(['sleep', '0.4'])
+        subprocess.Popen(['nautilus'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 except Exception:
     pass
 

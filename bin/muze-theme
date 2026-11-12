@@ -113,8 +113,9 @@ elif [[ -x "$HOME/.local/bin/muze-nautilus-palette" ]]; then
     "$HOME/.local/bin/muze-nautilus-palette" >/dev/null 2>&1 || true
 fi
 
-# Restart Nautilus so it reliably picks up the new theme/palette.
-if command -v nautilus >/dev/null 2>&1; then
+# If Nautilus is running, restart it so it picks up the new theme/palette.
+# If not running, leave it closed (palette files are already updated for next launch).
+if command -v nautilus >/dev/null 2>&1 && pgrep -x nautilus >/dev/null 2>&1; then
     nautilus -q >/dev/null 2>&1 || true
     sleep 0.4
     nautilus >/dev/null 2>&1 &
