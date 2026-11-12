@@ -133,7 +133,8 @@ else
     info "syncing package databases into a temporary db"
     pacman -Sy --config "$DL_CONF" --dbpath "$TMP_DB" --cachedir "$CACHE" --noconfirm
     info "downloading packages + all dependencies (this is the slow part)"
-    pacman -Sw --config "$DL_CONF" --dbpath "$TMP_DB" --cachedir "$CACHE" --noconfirm \
+    # Provide defaults for provider prompts and confirmations in non-interactive runs.
+    yes "" | pacman -Sw --config "$DL_CONF" --dbpath "$TMP_DB" --cachedir "$CACHE" --noconfirm \
            "${OFFLINE_PKGS[@]}"
     rm -rf "$TMP_DB"
 
