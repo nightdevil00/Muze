@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# muze-bluetooth-audio -- list/switch PipeWire-Pulse card profiles for
+# Bluetooth headsets (A2DP / HSP-HFP / ...).
+#
+#   muze-bluetooth-audio status [MAC]   JSON of matching BT cards + profiles
+#   muze-bluetooth-audio set CARD PROFILE
+#
+# Only cards whose device.api is bluez (or name starts with bluez_card.) are
+# returned, so the built-in sound card never shows up in the settings list.
+set -u
+
+cmd=${1:-status}
+
+case "$cmd" in
+    status)
+        mac=${2:-}
+        tmp=$(mktemp /tmp/muze-bt-cards-XXXXXX)
+        pactl list cards >"$tmp" 2>/dev/null || true
+        python3 - "$tmp" "$mac" <<'PY'
+import sys, json, re, os
+path, mac = sys.argv[1], sys.argv[2]
+text = open(path).read() if os.path.exists(path) else ""
+want = mac.replace(":", "").upper() if mac else ""
+blocks = re.split(r"(?m)^Card #\d+\s*$", text)
+cards = []
+for block in blocks:
+    if not block.strip():
+        continue
+    name = ""
+    props = {}
+    profiles = []
+    active = ""
+    mode = ""
+    for line in block.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Name:"):
+            name = stripped.split(":", 1)[1].strip()
+        elif stripped == "Properties:":
+            mode = "props"
+        elif stripped == "Profiles:":
+            mode = "profiles"
+        elif stripped.startswith("Active Profile:"):
+            active = stripped.split(":", 1)[1].strip()
+            mode = ""
+        elif stripped == "Ports:" or stripped == "Suggested configuration:":
+            mode = ""
+        elif mode == "props":
+            m = re.match(r"\s*([^=]+?)\s*=\s*(.*)$", line)
+            if m:
+                props[m.group(1).strip()] = m.group(2).strip().strip('"')
+        elif mode == "profiles":
+            m = re.match(r"\s+([A-Za-z0-9_.:+-]+):\s*(.*?)\s*\(sinks:", line)
+            if m:
+                profiles.append({
+                    "name": m.group(1),
+                    "description": m.group(2).strip(),
+                    "available": "available: yes" in line,
+                })
+    addr = props.get("device.address") or props.get("device.string") or ""
+    api = props.get("device.api", "")
+    is_bt = api == "bluez" or name.startswith("bluez_card.") or addr.startswith("bluez")
+    if not is_bt or not name:
+        continue
+    if want and want not in addr.replace(":", "").upper():
+        continue
+    cards.append({
+        "name": name,
+        "address": addr,
+        "description": props.get("device.description") or name,
+        "activeProfile": active,
+        "profiles": [p for p in profiles if p["available"] and p["name"] != "off"],
+    })
+print(json.dumps({"available": bool(cards), "cards": cards}))
+PY
+        rm -f "$tmp"
+        ;;
+    set)
+        card=${2:-}
+        profile=${3:-}
+        [[ "$card" =~ ^[A-Za-z0-9_.:+-]+$ ]] || { echo "invalid card" >&2; exit 1; }
+        [[ "$profile" =~ ^[A-Za-z0-9_.:+-]+$ ]] || { echo "invalid profile" >&2; exit 1; }
+        if pactl set-card-profile "$card" "$profile" >/dev/null 2>&1; then
+            printf 'ok\n'
+        else
+            printf 'failed\n'
+            exit 1
+        fi
+        ;;
+    -h|--help)
+        sed -n '2,8p' "$0"
+        ;;
+    *)
+        printf 'usage: %s status [MAC] | set CARD PROFILE\n' "$0" >&2
+        exit 2
+        ;;
+esac

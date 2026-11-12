@@ -1,0 +1,88 @@
+# Muze desktop -- QuickShell + Hyprland + everything the shell needs at runtime.
+# All from the official Arch repos (no AUR needed for the core experience).
+
+# Compositor + shell
+hyprland
+xorg-xwayland
+quickshell
+matugen
+awww
+hyprpolkitagent
+hyprlock
+hypridle
+# graceful shutdown menu used by the SUPER+SHIFT+M exit bind
+hyprshutdown
+
+# Qt / GTK runtime
+qt6-base
+qt6-declarative
+qt6-svg
+qt6-wayland
+qt6-multimedia
+qt6-5compat
+qt6ct
+adwaita-icon-theme
+gnome-themes-extra
+adw-gtk-theme
+papirus-icon-theme
+xdg-desktop-portal-hyprland
+xdg-desktop-portal-gtk
+xdg-user-dirs
+libnotify
+gnome-keyring
+libsecret
+
+# Fonts
+ttf-jetbrains-mono-nerd
+noto-fonts
+noto-fonts-emoji
+noto-fonts-cjk
+
+# Bluetooth (Quickshell's native Quickshell.Bluetooth talks to org.bluez)
+bluez
+bluez-utils
+# pactl / card profiles for the Bluetooth audio-profile selector
+libpulse
+pipewire-pulse
+
+# Shell runtime dependencies
+brightnessctl
+playerctl
+pamixer
+jq
+fzf
+wl-clipboard
+cliphist
+grim
+slurp
+swappy
+gpu-screen-recorder
+imagemagick
+# `sensors` fallback for the temperature bar plugin. mesa already pulls this
+# in, but keep it explicit so the plugin cannot silently fall back to "N/A".
+lm_sensors
+# WebP/TIFF/HEIF image plugins: wallpaper-picker thumbnails and clipboard
+# history previews. PNG/JPEG/GIF/SVG are already covered by qt6-base/qt6-svg.
+qt6-imageformats
+gum
+dialog
+zenity
+python
+gptfdisk
+parted
+
+# Defaults (browser, file manager, tools)
+chromium
+thunar
+gvfs
+tumbler
+ffmpegthumbnailer
+kitty
+foot
+fuzzel
+btop
+fastfetch
+mpv
+imv
+evince
+intel-media-driver

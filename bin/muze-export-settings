@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Export Muze settings, pinned apps, Hyprland settings, and installed packages
+# (Arch/native + AUR/foreign) into a single JSON file for backup/import.
+set -euo pipefail
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:$PATH"
+
+out="${1:-$HOME/Muze-export-$(date +%Y%m%d-%H%M%S).json}"
+settings_file="${XDG_CONFIG_HOME:-$HOME/.config}/muze/settings.json"
+mkdir -p "$(dirname "$out")"
+
+tmp_settings=$(mktemp)
+tmp_native=$(mktemp)
+tmp_aur=$(mktemp)
+tmp_json=$(mktemp)
+cleanup() { rm -f "$tmp_settings" "$tmp_native" "$tmp_aur" "$tmp_json"; }
+trap cleanup EXIT
+
+if [[ -f "$settings_file" ]]; then
+    cp "$settings_file" "$tmp_settings"
+else
+    printf '{}' > "$tmp_settings"
+fi
+
+if command -v pacman >/dev/null 2>&1; then
+    pacman -Qqn 2>/dev/null | sort -u > "$tmp_native" || true
+    pacman -Qqm 2>/dev/null | sort -u > "$tmp_aur" || true
+else
+    : > "$tmp_native"
+    : > "$tmp_aur"
+fi
+
+python3 - "$tmp_settings" "$tmp_native" "$tmp_aur" "$tmp_json" <<'PY'
+import json, sys, datetime
+settings_path, native_path, aur_path, out_path = sys.argv[1:5]
+
+def read_lines(p):
+    try:
+        with open(p, 'r', encoding='utf-8', errors='ignore') as f:
+            return [ln.strip() for ln in f if ln.strip()]
+    except Exception:
+        return []
+
+try:
+    with open(settings_path, 'r', encoding='utf-8') as f:
+        settings = json.load(f)
+except Exception:
+    settings = {}
+
+if not isinstance(settings, dict):
+    settings = {}
+
+dock = settings.get('dock') if isinstance(settings.get('dock'), dict) else {}
+hypr = settings.get('hyprland') if isinstance(settings.get('hyprland'), dict) else {}
+export = {
+    "format": "muze-settings-export",
+    "version": 1,
+    "exportedAt": datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(timespec='seconds'),
+    "settings": settings,
+    "pinnedApps": dock.get('pinned', []) if isinstance(dock.get('pinned', []), list) else [],
+    "hyprland": hypr,
+    "packages": {
+        "native": read_lines(native_path),
+        "aur": read_lines(aur_path),
+    },
+}
+with open(out_path, 'w', encoding='utf-8') as f:
+    json.dump(export, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+PY
+
+mv "$tmp_json" "$out"
+printf '%s\n' "$out"

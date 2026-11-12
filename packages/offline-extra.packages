@@ -1,0 +1,20 @@
+# Extra packages baked into the ISO's offline repository (on top of
+# base.packages + desktop.packages + profiles/minimal.packages).
+# Anything not listed here needs an online install. Add a profile here to make
+# that profile available offline, then rebuild the ISO.
+
+firefox
+flatpak
+tlp
+broadcom-wl-dkms
+
+# GPU driver sets so hardware detection can install the right one offline
+nvidia-open
+nvidia-utils
+mesa
+vulkan-radeon
+vulkan-intel
+
+# Common fallback kernel
+linux-lts
+linux-lts-headers

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# `bash` so the ISO does not depend on the exec bit of the /opt/muze copy.
+exec bash /opt/muze/installer/muze-install "$@"

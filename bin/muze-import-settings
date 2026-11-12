@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Import Muze settings from a muze-settings-export JSON file.
+# Restores ~/.config/muze/settings.json (settings, pinned apps, Hyprland settings).
+# Package lists in the export are not installed automatically.
+set -euo pipefail
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:$PATH"
+
+in="${1:-}"
+if [[ -z "$in" ]]; then
+    echo "usage: muze-import-settings <export.json>" >&2
+    exit 2
+fi
+if [[ ! -f "$in" ]]; then
+    echo "muze-import-settings: file not found: $in" >&2
+    exit 1
+fi
+
+settings_file="${XDG_CONFIG_HOME:-$HOME/.config}/muze/settings.json"
+mkdir -p "$(dirname "$settings_file")"
+
+backup=""
+if [[ -f "$settings_file" ]]; then
+    backup="$settings_file.bak.$(date +%Y%m%d-%H%M%S)"
+    cp "$settings_file" "$backup"
+fi
+
+python3 - "$in" "$settings_file" <<'PY'
+import json, sys
+src, dst = sys.argv[1], sys.argv[2]
+with open(src, 'r', encoding='utf-8') as f:
+    data = json.load(f)
+if not isinstance(data, dict):
+    raise SystemExit('invalid export: not a JSON object')
+# Accept either full export wrapper or raw settings object
+settings = data.get('settings') if isinstance(data.get('settings'), dict) else data
+if not isinstance(settings, dict):
+    raise SystemExit('invalid export: missing settings')
+with open(dst, 'w', encoding='utf-8') as f:
+    json.dump(settings, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+PY
+
+if [[ -n "$backup" ]]; then
+    echo "Imported settings from $in (backup: $backup)"
+else
+    echo "Imported settings from $in"
+fi

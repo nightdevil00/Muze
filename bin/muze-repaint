@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# muze-repaint -- force Hyprland to redraw every output.
+#
+# On hybrid graphics (Intel iGPU + NVIDIA dGPU) an output can keep the last
+# scanout frame after unlock or resume -- typically the lock screen -- while
+# the other outputs repaint normally. `force_renderer_reload` rebuilds the
+# renderer, which redraws all outputs. `hyprctl dispatch forceupdate` is gone
+# in Hyprland 0.57's Lua config, hence this helper.
+set -u
+export PATH="$HOME/.local/bin:$PATH"
+
+exec hyprctl eval 'hl.dsp.force_renderer_reload()'

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# muze-wallpaper -- set a wallpaper on EVERY output and remember the choice.
+#
+# awww's default already targets all outputs, but its `grow` transition uses a
+# single global circle centre, which can leave a secondary monitor on the old
+# image. This helper queries the daemon, addresses every output explicitly and
+# uses a per-output fade transition instead.
+set -u
+
+img=${1:-}
+[[ -n "$img" && -f "$img" ]] || { echo "muze-wallpaper: usage: muze-wallpaper <image>" >&2; exit 1; }
+
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/muze"
+mkdir -p "$CACHE"
+
+# Remember the choice for muze-theme --refresh and the QML wallpaper service.
+printf '%s' "$img" > "$CONF/quickshell/wallpaper.conf"
+printf '%s' "$img" > "$CACHE/current-wallpaper"
+
+if ! command -v awww >/dev/null 2>&1; then
+    echo "muze-wallpaper: awww not installed" >&2
+    exit 1
+fi
+
+# Make sure the daemon is up (muze-session-start also does this).
+if ! pgrep -x awww-daemon >/dev/null 2>&1; then
+    awww-daemon >/dev/null 2>&1 &
+    sleep 0.6
+fi
+
+# Output list: `: eDP-1: 1920x1080, ...` -> `eDP-1,HDMI-A-4`
+outputs=$(awww query 2>/dev/null | sed -n 's/^: \([^:]*\):.*/\1/p' | paste -sd, - || true)
+
+args=(img "$img")
+[[ -n "$outputs" ]] && args+=(-o "$outputs")
+args+=(--transition-type fade --transition-duration 1)
+
+if ! awww "${args[@]}" >/dev/null 2>&1; then
+    # Fallback: no explicit outputs / no transition support.
+    awww img "$img" >/dev/null 2>&1 || { echo "muze-wallpaper: awww failed" >&2; exit 1; }
+fi
+exit 0

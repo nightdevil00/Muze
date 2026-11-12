@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# muze-snapshot -- take a Btrfs snapshot before any agent-driven disk change.
+# Called by muze-install when [agent].snapshot_before = true. Best effort: if
+# there is no existing Muze/Arch Btrfs layout on the target disk, it is a fresh
+# install and there is nothing to snapshot.
+set -u
+
+dev=${1:-}
+[[ -n "$dev" && -b "$dev" ]] || { echo "muze-snapshot: no disk given"; exit 0; }
+command -v btrfs >/dev/null 2>&1 || { echo "muze-snapshot: btrfs-progs missing"; exit 0; }
+
+tmp=$(mktemp -d)
+mounted=0
+for part in $(lsblk -n -o NAME,FSTYPE "$dev" 2>/dev/null | awk '$2=="btrfs"{print "/dev/"$1}'); do
+    if mount -o ro "$part" "$tmp" 2>/dev/null; then mounted=1; break; fi
+done
+if [[ $mounted -eq 0 ]]; then
+    echo "muze-snapshot: no existing Btrfs filesystem on $dev (fresh install), nothing to snapshot"
+    rmdir "$tmp"; exit 0
+fi
+
+if btrfs subvolume list "$tmp" 2>/dev/null | grep -qE 'path @$|path @\.snapshots$'; then
+    umount "$tmp" 2>/dev/null || true
+    mount "$part" "$tmp" 2>/dev/null || { rmdir "$tmp"; exit 0; }
+    name="pre-install-$(date +%Y%m%d-%H%M%S)"
+    if btrfs subvolume snapshot "$tmp/@" "$tmp/@.snapshots/$name" >/dev/null 2>&1; then
+        echo "muze-snapshot: created @.snapshots/$name"
+    else
+        echo "muze-snapshot: could not create snapshot (continuing anyway)"
+    fi
+else
+    echo "muze-snapshot: no @ subvolume found, skipping"
+fi
+umount "$tmp" 2>/dev/null || true
+rmdir "$tmp" 2>/dev/null || true
+exit 0

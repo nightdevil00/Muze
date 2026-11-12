@@ -1,0 +1,52 @@
+# Muze -- systemwide colour generation from the wallpaper.
+#
+# `muze-theme <image>` runs matugen with this config. Every palette change
+# renders all of these templates in one shot, so the shell, Hyprland, the
+# terminals and the toolkits always agree on the same Material 3 roles.
+#
+# Core templates always render. Third-party GUI apps live in apps.toml and are
+# gated by Settings -> Appearance -> "Theme third-party apps" (themeApps).
+#
+# Template syntax: {{colors.<role>.default.hex}} (matugen 4.x).
+# `post_hook` runs after the template is written.
+
+[config]
+
+[templates.quickshell]
+input_path = "~/.config/matugen/templates/muze-palette.json"
+output_path = "~/.config/quickshell/theme-switcher/wallpaper-theme.json"
+
+[templates.colors]
+input_path = "~/.config/matugen/templates/colors.json"
+output_path = "~/.cache/muze/colors.json"
+
+[templates.hypr]
+input_path = "~/.config/matugen/templates/hypr-colors.lua"
+output_path = "~/.config/hypr/muze/colors.lua"
+post_hook = "command -v hyprctl >/dev/null 2>&1 && hyprctl reload >/dev/null 2>&1 || true"
+
+[templates.kitty]
+input_path = "~/.config/matugen/templates/kitty-colors.conf"
+output_path = "~/.config/kitty/muze-colors.conf"
+post_hook = "for s in /tmp/kitty-*; do [ -S \"$s\" ] && kitty @ --to \"unix:$s\" set-colors --all --configured ~/.config/kitty/muze-colors.conf 2>/dev/null; done; true"
+
+[templates.foot]
+input_path = "~/.config/matugen/templates/foot-colors.ini"
+output_path = "~/.config/foot/muze-colors.ini"
+post_hook = "pkill -SIGUSR1 foot 2>/dev/null || true"
+
+[templates.qt6ct]
+input_path = "~/.config/matugen/templates/qt6ct-colors.conf"
+output_path = "~/.config/qt6ct/colors/muze.conf"
+
+[templates.btop]
+input_path = "~/.config/matugen/templates/btop.theme"
+output_path = "~/.config/btop/themes/muze.theme"
+
+[templates.fuzzel]
+input_path = "~/.config/matugen/templates/fuzzel.ini"
+output_path = "~/.config/fuzzel/muze-colors.ini"
+
+[templates.hyprlock]
+input_path = "~/.config/matugen/templates/hyprlock.conf"
+output_path = "~/.config/hypr/hyprlock.conf"

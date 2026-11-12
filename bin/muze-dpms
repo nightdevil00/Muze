@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# muze-dpms -- turn DPMS on/off for every output, or a specific one.
+#
+# Hyprland 0.57's Lua config replaced classic `hyprctl dispatch dpms ...`
+# string dispatchers. The dispatcher must be invoked via `hyprctl dispatch`
+# with a Lua expression: hl.dsp.dpms({action = "on|off", monitor = "..."})
+set -u
+export PATH="$HOME/.local/bin:$PATH"
+
+state="${1:-on}"
+monitor="${2:-}"
+case "$state" in
+    on|off) ;;
+    *) echo "usage: muze-dpms on|off [MONITOR]" >&2; exit 2 ;;
+esac
+
+if [[ -n "$monitor" ]]; then
+    exec hyprctl dispatch "hl.dsp.dpms({action = \"$state\", monitor = \"$monitor\"})"
+fi
+exec hyprctl dispatch "hl.dsp.dpms({action = \"$state\"})"

@@ -1,0 +1,17 @@
+{
+  "name": "Wallpaper",
+  "family": "Dynamic",
+  "bgBase": "#0f1416",
+  "bgSurface": "#1b2022",
+  "bgHover": "#252b2d",
+  "bgSelected": "#303638",
+  "bgBorder": "#3f484b",
+  "textPrimary": "#dee3e5",
+  "textSecondary": "#bfc8cb",
+  "textMuted": "#899295",
+  "accentPrimary": "#84d2e7",
+  "accentCyan": "#bfc4eb",
+  "accentGreen": "#b2cbd2",
+  "accentOrange": "#84d2e7",
+  "accentRed": "#ffb4ab"
+}

@@ -1,0 +1,13 @@
+# Hardware-conditional packages. The installer adds only the matching lines.
+# Format: <match>|<packages...>   (match is a shell glob against detected hw)
+# Everything here is also in the offline repo, so offline installs work.
+
+cpu:AuthenticAMD|amd-ucode
+cpu:GenuineIntel|intel-ucode
+
+gpu:10de|nvidia-open nvidia-utils
+gpu:1002|mesa vulkan-radeon lib32-mesa lib32-vulkan-radeon
+gpu:8086|mesa vulkan-intel lib32-mesa lib32-vulkan-intel
+
+wifi:broadcom|broadcom-wl-dkms
+laptop:battery|tlp

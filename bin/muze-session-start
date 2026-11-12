@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# muze-session-start -- Hyprland autostart glue for the Muze desktop.
+# Called once from hyprland.lua via `exec-once = muze-session-start`.
+set -u
+export PATH="$HOME/.local/bin:$PATH"
+
+log() { printf '[muze-session] %s\n' "$*" >> "${XDG_STATE_HOME:-$HOME/.local/state}/muze/session.log" 2>/dev/null || true; }
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/muze" 2>/dev/null || true
+
+# 1. Desktop services (Polkit, portals, keyring)
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user start hyprpolkitagent.service           >/dev/null 2>&1 || true
+    systemctl --user start xdg-desktop-portal-hyprland.service >/dev/null 2>&1 || true
+    systemctl --user start xdg-desktop-portal-gtk.service     >/dev/null 2>&1 || true
+fi
+
+# A leftover hyprpaper from a previous Hyprland setup would fight awww for the
+# background layer (and keep an old wallpaper on screen). Muze owns wallpapers.
+if pgrep -x hyprpaper >/dev/null 2>&1; then
+    pkill -x hyprpaper 2>/dev/null || true
+    log "stopped leftover hyprpaper"
+fi
+
+# 2. Wallpaper daemon
+if command -v awww-daemon >/dev/null 2>&1; then
+    pgrep -x awww-daemon >/dev/null 2>&1 || { awww-daemon >/dev/null 2>&1 & }
+    sleep 0.5
+fi
+
+# 3. Restore the saved wallpaper on every output and regenerate the
+#    systemwide palette. With no argument muze-theme reads wallpaper.conf
+#    (falling back to the shipped beach.jpg).
+if command -v muze-theme >/dev/null 2>&1; then
+    muze-theme >/dev/null 2>&1 || log "muze-theme failed"
+elif command -v awww >/dev/null 2>&1; then
+    wp=$(cat "$HOME/.config/quickshell/wallpaper.conf" 2>/dev/null || true)
+    [[ -z "$wp" || ! -f "$wp" ]] && wp="$HOME/Pictures/Wallpapers/beach.jpg"
+    awww img "$wp" >/dev/null 2>&1 || true
+fi
+
+# 4. The shell itself (QuickShell auto-reloads on config changes)
+if command -v qs >/dev/null 2>&1; then
+    pgrep -f '/bin/qs' >/dev/null 2>&1 || qs -n -d >/dev/null 2>&1 || log "quickshell failed to start"
+fi
+
+# 5. Idle / lock -- muze-idle generates the hypridle config from the user's
+#    Power settings (lock / display-off / suspend can each be disabled).
+if command -v muze-idle >/dev/null 2>&1; then
+    muze-idle >/dev/null 2>&1 || log "muze-idle failed"
+elif command -v hypridle >/dev/null 2>&1; then
+    pgrep -x hypridle >/dev/null 2>&1 || hypridle >/dev/null 2>&1 &
+fi
+
+log "session started at $(date '+%F %T')"

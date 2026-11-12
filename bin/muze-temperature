@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# muze-temperature -- CPU temperature for the Muze bar, no external tools.
+# Reads the kernel thermal zones directly (millidegrees Celsius) and reports the
+# hottest one, falling back to `sensors` if sysfs is unavailable.
+set -u
+
+max=0
+for f in /sys/class/thermal/thermal_zone*/temp; do
+    [[ -r "$f" ]] || continue
+    t=$(cat "$f" 2>/dev/null || echo 0)
+    [[ "$t" =~ ^[0-9]+$ ]] || continue
+    (( t > max )) && max=$t
+done
+
+if (( max > 1000 )); then
+    awk -v m="$max" 'BEGIN { printf "%.0f°C", m / 1000 }'
+    exit 0
+fi
+
+if command -v sensors >/dev/null 2>&1; then
+    val=$(sensors 2>/dev/null | grep -E 'Package id 0|Tctl|Core 0' | head -1 | awk '{print $2}' | sed 's/+//')
+    [[ -n "$val" ]] && { printf '%s\n' "$val"; exit 0; }
+fi
+printf 'N/A\n'

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Wrapper for the Muze hardware/profile detector (lives in installer/ in the source tree).
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$SELF_DIR/../installer/muze-detect" ]]; then
+    exec bash "$SELF_DIR/../installer/muze-detect" "$@"
+elif [[ -x /opt/muze/installer/muze-detect ]]; then
+    exec bash /opt/muze/installer/muze-detect "$@"
+else
+    echo "muze-detect: detector not found" >&2
+    exit 1
+fi

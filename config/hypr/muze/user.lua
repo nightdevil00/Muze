@@ -1,0 +1,3 @@
+-- Muze user overrides. Loaded last, after the generated look/colour files.
+-- Anything you put here wins over the Settings UI, e.g.:
+-- hl.bind("SUPER + R", hl.dsp.exec_cmd("muze-hypr-apply"))

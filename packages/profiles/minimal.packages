@@ -1,0 +1,13 @@
+# Muze package profiles. The installer shows these as a multi-select list;
+# the union of the selected profiles is installed (deduplicated).
+# Minimal is always included.
+
+# --- Minimal (always) -------------------------------------------------------
+# Already covered by base.packages + desktop.packages: browser, file manager,
+# terminal, launcher, screenshot tools. Nothing extra here.
+
+chromium
+thunar
+kitty
+fuzzel
+grim

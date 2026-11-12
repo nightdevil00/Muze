@@ -1,0 +1,13 @@
+# Build artifacts
+*.iso
+*.iso.sha256sum
+iso/work/
+iso/out/
+iso/build_iso.log
+
+# Cache / temp
+**/__pycache__/
+*.pyc
+
+# Local state
+.DS_Store

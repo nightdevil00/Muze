@@ -1,0 +1,26 @@
+# AUR packages -- built AFTER install, online only, best-effort (unless baked
+# into the offline repo by iso/build_iso.sh).
+# One package per line; '#' and blank lines are ignored.
+#
+# Boot-critical: the Limine snapshot stack owns the boot menu and must be
+# installed before any other AUR package. `limine-mkinitcpio-hook` PROVIDES
+# (and conflicts with) `limine-entry-tool`, so do not list both.
+# Built on the host with:
+#   yay -S limine-mkinitcpio-hook limine-snapper-sync
+# and cached in packages/aur-cache/ so offline installs get snapshots too.
+limine-mkinitcpio-hook
+limine-snapper-sync
+
+yay-bin
+
+# Desktop look referenced by config/hypr/hyprland.lua and config/qt6ct
+# (Bibata cursor, Adwaita Qt6 style). They are AUR-only, so offline installs
+# fall back to the bundled Adwaita cursors / Fusion style until the first
+# online boot can build them.
+bibata-cursor-theme
+adwaita-qt6
+
+zen-browser-bin
+localsend-bin
+postman-bin
+visual-studio-code-bin

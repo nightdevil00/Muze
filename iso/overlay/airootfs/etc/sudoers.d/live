@@ -1,0 +1,2 @@
+# The live user may install without a password (the ISO is ephemeral).
+live ALL=(ALL) NOPASSWD: ALL

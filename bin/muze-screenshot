@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# muze-screenshot -- capture screenshots via grim/slurp/wl-copy.
+#
+# Usage:
+#   muze-screenshot region-clip   select region and copy to clipboard (default)
+#   muze-screenshot region-file   select region and save to file
+#   muze-screenshot full-clip     capture full screen and copy to clipboard
+#   muze-screenshot full-file     capture full screen and save to file
+#
+# Files are saved to ~/Pictures/Screenshots/Muze-YYYYmmdd-HHMMSS.png
+# The saved path is printed on success for file captures.
+set -euo pipefail
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:$PATH"
+
+cmd="${1:-region-clip}"
+shots_dir="$HOME/Pictures/Screenshots"
+
+need() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "muze-screenshot: missing required command: $1" >&2
+        exit 1
+    fi
+}
+
+notify() {
+    local msg="$1"
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send -a Muze "Screenshot" "$msg" >/dev/null 2>&1 || true
+    fi
+}
+
+capture_region() {
+    need grim
+    need slurp
+    local geom
+    geom=$(slurp 2>/dev/null || true)
+    if [[ -z "$geom" ]]; then
+        exit 1
+    fi
+    grim -g "$geom" "$@"
+}
+
+capture_full() {
+    need grim
+    grim "$@"
+}
+
+copy_file() {
+    need wl-copy
+    wl-copy --type image/png < "$1"
+}
+
+save_path() {
+    mkdir -p "$shots_dir"
+    printf '%s/Muze-%s.png\n' "$shots_dir" "$(date +%Y%m%d-%H%M%S)"
+}
+
+case "$cmd" in
+    region|region-clip)
+        tmp=$(mktemp /tmp/muze-screenshot.XXXXXX.png)
+        trap 'rm -f "$tmp"' EXIT
+        capture_region "$tmp"
+        copy_file "$tmp"
+        notify "Region copied to clipboard"
+        ;;
+    region-file)
+        out=$(save_path)
+        capture_region "$out"
+        notify "Saved to $out"
+        echo "$out"
+        ;;
+    full|full-clip)
+        tmp=$(mktemp /tmp/muze-screenshot.XXXXXX.png)
+        trap 'rm -f "$tmp"' EXIT
+        capture_full "$tmp"
+        copy_file "$tmp"
+        notify "Screen copied to clipboard"
+        ;;
+    full-file)
+        out=$(save_path)
+        capture_full "$out"
+        notify "Saved to $out"
+        echo "$out"
+        ;;
+    *)
+        echo "usage: muze-screenshot {region-clip|region-file|full-clip|full-file}" >&2
+        exit 2
+        ;;
+esac

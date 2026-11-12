@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Muze live session launcher (tty1 autologin for the `live` user).
+# If Hyprland cannot start (e.g. no GPU / headless VM), drop to a shell so the
+# installer and rescue tools remain reachable.
+set -u
+
+if [[ "$(tty 2>/dev/null)" != "/dev/tty1" ]]; then
+    exec /bin/bash
+fi
+
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export PATH="$HOME/.local/bin:$PATH"
+mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null || true
+chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
+if command -v Hyprland >/dev/null 2>&1; then
+    printf '\n\033[38;5;212mWelcome to Muze\033[0m -- starting the desktop...\n'
+    dbus-run-session -- Hyprland
+    printf '\n\033[1;33mHyprland exited.\033[0m\n'
+fi
+
+printf '\033[1;33mMuze desktop unavailable.\033[0m Dropping to a shell.\n'
+printf 'Run \033[1msudo muze-install\033[0m to install, or \033[1msudo muze-repair\033[0m to fix a system.\n\n'
+exec /bin/bash

@@ -1,0 +1,54 @@
+# Muze base system -- pacstrapped into the target (Arch official repos only).
+# One package per line; '#' and blank lines are ignored by the installer.
+
+# Core
+base
+base-devel
+linux
+linux-firmware
+linux-headers
+mkinitcpio
+sudo
+git
+nano
+vim
+polkit
+
+# Boot chain
+btrfs-progs
+cryptsetup
+dosfstools
+efibootmgr
+limine
+plymouth
+snapper
+snap-pac
+zram-generator
+
+# CPU microcode + firmware (installer picks only what the CPU needs from
+# hardware.packages, but both are in the offline repo so either works offline)
+amd-ucode
+intel-ucode
+sof-firmware
+
+# Networking / Bluetooth
+networkmanager
+iwd
+wpa_supplicant
+wireless-regdb
+iw
+bluez
+bluez-utils
+
+# Audio (PipeWire)
+pipewire
+pipewire-alsa
+pipewire-pulse
+pipewire-audio
+wireplumber
+alsa-utils
+rtkit
+
+# Power
+power-profiles-daemon
+upower

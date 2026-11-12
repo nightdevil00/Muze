@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "appearance": {
+    "themeMode": "wallpaper",
+    "themeApps": true,
+    "barHeight": 32,
+    "barOpacity": 100,
+    "showClock": true,
+    "showWorkspaces": true,
+    "showMedia": true,
+    "showVolume": true,
+    "showBrightness": true,
+    "showCpu": true,
+    "showNetwork": true,
+    "showBattery": true,
+    "showTemperature": true,
+    "showTray": true,
+    "clockSeconds": false,
+    "use24h": true,
+    "wallpaperPath": "",
+    "pluginOrder": [
+      "appsmenu",
+      "workspaces",
+      "clock",
+      "media",
+      "title",
+      "volume",
+      "brightness",
+      "cpu",
+      "network",
+      "bluetooth",
+      "battery",
+      "temperature",
+      "caffeine",
+      "tray",
+      "power",
+      "screenrecorder",
+      "screenshot",
+      "settingsbutton"
+    ],
+    "showBluetooth": true,
+    "showSettingsButton": true,
+    "showAppsMenu": true,
+    "showPower": true,
+    "showScreenRecorder": true,
+    "showScreenshot": true,
+    "showTitle": true,
+    "barLeft": [
+      "appsmenu",
+      "workspaces"
+    ],
+    "barCenter": [
+      "clock",
+      "media",
+      "title"
+    ],
+    "barRight": [
+      "volume",
+      "brightness",
+      "cpu",
+      "network",
+      "bluetooth",
+      "battery",
+      "temperature",
+      "caffeine",
+      "tray",
+      "power",
+      "screenrecorder",
+      "screenshot",
+      "settingsbutton"
+    ],
+    "showCaffeine": true
+  },
+  "hyprland": {
+    "gapsIn": 5,
+    "gapsOut": 10,
+    "borderSize": 2,
+    "rounding": 12,
+    "activeOpacity": 1,
+    "inactiveOpacity": 0.95,
+    "blurEnabled": true,
+    "blurSize": 6,
+    "animationsEnabled": true,
+    "layout": "dwindle",
+    "naturalScroll": true,
+    "kbLayout": "us",
+    "followMouse": 1,
+    "sensitivity": 0
+  },
+  "power": {
+    "lockEnabled": true,
+    "lockMinutes": 5,
+    "screenOffEnabled": true,
+    "screenOffMinutes": 6,
+    "suspendEnabled": true,
+    "suspendMinutes": 15
+  },
+  "dock": {
+    "enabled": true,
+    "position": "bottom",
+    "autohide": false,
+    "pinned": [
+      "org.gnome.Nautilus",
+      "firefox",
+      "chromium",
+      "kitty",
+      "thunar"
+    ],
+    "iconSize": 40,
+    "screen": "all"
+  }
+}

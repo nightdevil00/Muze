@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# muze-theme -- extract a Material 3 palette from a wallpaper and apply it
+# systemwide (Quickshell, Hyprland, GTK, Qt, terminals, btop, hyprlock).
+#
+# Usage:
+#   muze-theme <image>                     set wallpaper + recolour everything
+#   muze-theme --colors-only <image>       recolour only (wallpaper already set)
+#   muze-theme --refresh                   recolour from the CURRENT wallpaper
+#                                          (never changes the wallpaper)
+#   muze-theme --colors-only --refresh     same, explicit
+#
+# The source of truth for the current wallpaper is
+# ~/.config/quickshell/wallpaper.conf (written by muze-wallpaper / the QML
+# picker). ~/.cache/muze/current-wallpaper is only a fallback.
+set -euo pipefail
+
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/muze"
+SETTINGS="$CONF_DIR/muze/settings.json"
+STATE="$CACHE_DIR/current-wallpaper"
+WALLPAPER_CONF="$CONF_DIR/quickshell/wallpaper.conf"
+DEFAULT_WALL="$HOME/Pictures/Wallpapers/beach.jpg"
+
+mkdir -p "$CACHE_DIR" "$CONF_DIR/matugen/templates" "$CONF_DIR/hypr/muze" \
+         "$CONF_DIR/kitty" "$CONF_DIR/foot" \
+         "$CONF_DIR/fuzzel" "$CONF_DIR/qt6ct/colors" "$CONF_DIR/btop/themes" \
+         "$CONF_DIR/gtk-3.0" "$CONF_DIR/gtk-4.0"
+
+log() { printf '\033[0;34m[muze-theme]\033[0m %s\n' "$*" >&2; }
+warn() { printf '\033[1;33m[muze-theme]\033[0m %s\n' "$*" >&2; }
+
+setting() { # setting <key> <default>
+    local key=$1 def=$2 val=""
+    if [[ -f "$SETTINGS" ]] && command -v jq >/dev/null 2>&1; then
+        val=$(jq -r "$key // empty" "$SETTINGS" 2>/dev/null || true)
+    fi
+    printf '%s' "${val:-$def}"
+}
+
+COLORS_ONLY=0
+REFRESH=0
+IMG=""
+for arg in "$@"; do
+    case "$arg" in
+        --colors-only) COLORS_ONLY=1 ;;
+        --refresh)     REFRESH=1; COLORS_ONLY=1 ;;  # refresh never changes the wallpaper
+        -h|--help)     sed -n '2,16p' "$0"; exit 0 ;;
+        -*)            warn "unknown option: $arg" ;;
+        *)             IMG=$arg ;;
+    esac
+done
+
+if [[ $REFRESH -eq 1 || -z "$IMG" ]]; then
+    IMG=$(cat "$WALLPAPER_CONF" 2>/dev/null || true)
+    [[ -z "$IMG" || ! -f "$IMG" ]] && IMG=$(cat "$STATE" 2>/dev/null || true)
+fi
+if [[ -z "$IMG" || ! -f "$IMG" ]]; then
+    IMG="$DEFAULT_WALL"
+fi
+if [[ ! -f "$IMG" ]]; then
+    IMG=$(find "$HOME/Pictures" "$HOME/Pictures/Wallpapers" \
+        -maxdepth 2 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+        2>/dev/null | sort | head -1 || true)
+fi
+if [[ -z "$IMG" || ! -f "$IMG" ]]; then
+    warn "no wallpaper image found"
+    exit 1
+fi
+
+printf '%s' "$IMG" > "$STATE"
+
+# 1. Wallpaper (multi-monitor aware), unless we were asked for colours only.
+if [[ $COLORS_ONLY -eq 0 ]]; then
+    if command -v muze-wallpaper >/dev/null 2>&1; then
+        muze-wallpaper "$IMG" || warn "muze-wallpaper failed (colours still generated)"
+    elif command -v awww >/dev/null 2>&1; then
+        awww img "$IMG" >/dev/null 2>&1 || warn "awww could not set the wallpaper"
+    else
+        warn "awww not installed -- wallpaper left unchanged"
+    fi
+fi
+
+# 2. Palette + core templates
+if ! command -v matugen >/dev/null 2>&1; then
+    warn "matugen not installed -- colours left unchanged"
+    exit 1
+fi
+CORE_CONF="$CONF_DIR/matugen/config.toml"
+APPS_CONF="$CONF_DIR/matugen/apps.toml"
+MODE=$(setting '.appearance.themeMode' "$(setting '.appearance.mode' 'wallpaper')")
+[[ "$MODE" == "light" ]] && MODE=light || MODE=dark
+
+log "generating $MODE palette from $(basename "$IMG")"
+matugen image "$IMG" -c "$CORE_CONF" -m "$MODE" --prefer saturation -q \
+    || { warn "matugen failed on core templates"; exit 1; }
+
+# Ensure lock screen uses the current wallpaper (blurred), even if template vars differ.
+if [[ -f "$CONF_DIR/hypr/hyprlock.conf" ]]; then
+    tmp_hl=$(mktemp)
+    awk -v p="$IMG" '
+        BEGIN { in_bg=0 }
+        /^[[:space:]]*background[[:space:]]*\{/ { in_bg=1 }
+        in_bg && /^[[:space:]]*path[[:space:]]*=/ { print "    path = " p; next }
+        in_bg && /^[[:space:]]*\}/ { in_bg=0 }
+        { print }
+    ' "$CONF_DIR/hypr/hyprlock.conf" > "$tmp_hl" && mv "$tmp_hl" "$CONF_DIR/hypr/hyprlock.conf"
+fi
+
+# 3. Third-party app templates (GTK), gated by the settings toggle
+if [[ "$(setting '.appearance.themeApps' 'true')" == "true" && -f "$APPS_CONF" ]]; then
+    matugen image "$IMG" -c "$APPS_CONF" -m "$MODE" --prefer saturation -q \
+        || warn "matugen failed on app templates"
+fi
+
+log "done"
