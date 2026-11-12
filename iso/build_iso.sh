@@ -78,7 +78,7 @@ ISO_PKGS=()
 ISO_PKGS+=($(read_list "$PROJECT/packages/desktop.packages"))
 ISO_PKGS+=($(read_list "$PROJECT/packages/offline-extra.packages"))
 # Tools needed by the live environment / installer
-ISO_PKGS+=(arch-install-scripts limine efibootmgr parted gptfdisk openssl \
+ISO_PKGS+=(sddm arch-install-scripts limine efibootmgr parted gptfdisk openssl \
            gum dialog jq python dbus snapper snap-pac zram-generator mkinitcpio)
 for p in "${ISO_PKGS[@]}"; do
     # A second kernel would need a second archiso initramfs; keep the live ISO
@@ -112,8 +112,9 @@ cat > "$DL_CONF" <<'PACDL'
 HoldPkg = pacman glibc
 Architecture = auto
 CheckSpace
-ParallelDownloads = 8
+ParallelDownloads = 5
 DownloadUser = root
+DisableDownloadTimeout
 SigLevel = Never
 LocalFileSigLevel = Optional
 
@@ -134,8 +135,14 @@ else
     pacman -Sy --config "$DL_CONF" --dbpath "$TMP_DB" --cachedir "$CACHE" --noconfirm
     info "downloading packages + all dependencies (this is the slow part)"
     # Provide defaults for provider prompts and confirmations in non-interactive runs.
+    # With pipefail, `yes` exits 141 (SIGPIPE) when pacman closes stdin; ignore that
+    # as long as pacman itself succeeds.
+    set +o pipefail
     yes "" | pacman -Sw --config "$DL_CONF" --dbpath "$TMP_DB" --cachedir "$CACHE" --noconfirm \
            "${OFFLINE_PKGS[@]}"
+    dl_rc=${PIPESTATUS[1]}
+    set -o pipefail
+    [[ $dl_rc -eq 0 ]] || abort "package download failed (pacman exit $dl_rc)"
     rm -rf "$TMP_DB"
 
     info "creating offline repository"

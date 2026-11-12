@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
-# muze-install -- Muze hybrid installer (offline + online, dualboot, repair).
+# muze-install -- Muze installer (rewritten, bash-only, no gum).
 #
-# Config-first: everything is written to install.toml, shown to the user as a
-# list of differences, and only applied after explicit approval. Re-running
-# with --config install.toml reproduces the same install deterministically.
-#
-#   muze-install                     interactive wizard
-#   muze-install --config FILE       apply an existing config (still confirms)
-#   muze-install --config FILE --yes skip the final confirmation (unattended)
-#   muze-install --config FILE --dry-run  show what would happen, write nothing
-#   muze-install --repair            mount an existing system for chroot repair
-#   muze-install --detect            print the L1 hardware proposal and exit
+#   muze-install                       interactive wizard
+#   muze-install --config FILE         apply an existing config (confirms first)
+#   muze-install --config FILE --yes   unattended apply
+#   muze-install --config FILE --dry-run
+#   muze-install --detect              print hardware detection and exit
+#   muze-install --repair              run repair helper
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,173 +20,175 @@ DETECT_ONLY=0
 DRY_RUN=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --config) CONFIG=$2; shift 2 ;;
-        --yes|-y) ASSUME_YES=1; shift ;;
-        --repair) DO_REPAIR=1; shift ;;
-        --detect) DETECT_ONLY=1; shift ;;
-        --dry-run) DRY_RUN=1; shift ;;
-        -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+        --config)   CONFIG=${2:-}; shift 2 ;;
+        --yes|-y)   ASSUME_YES=1; shift ;;
+        --repair)   DO_REPAIR=1; shift ;;
+        --detect)   DETECT_ONLY=1; shift ;;
+        --dry-run)  DRY_RUN=1; shift ;;
+        -h|--help)
+            sed -n '2,12p' "$0"; exit 0 ;;
         *) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
     esac
 done
 
 LOGFILE="/root/muze-install_$(date +%Y%m%d_%H%M%S).log"
-mkdir -p "$(dirname "$LOGFILE")"
+if ! mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || ! ( : > "$LOGFILE" ) 2>/dev/null; then
+    LOGFILE="/tmp/muze-install_$(date +%Y%m%d_%H%M%S).log"
+fi
 exec > >(tee -a "$LOGFILE") 2>&1
 
 # --------------------------------------------------------------------- UI ----
-# gum (modern) -> dialog -> plain read. Everything works without any of them.
-if command -v gum >/dev/null 2>&1; then UI=gum
-elif command -v dialog >/dev/null 2>&1; then UI=dialog
-else UI=plain
-fi
+C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
+C_BLUE=$'\033[0;34m'; C_GREEN=$'\033[0;32m'; C_YELLOW=$'\033[1;33m'; C_RED=$'\033[0;31m'; C_CYAN=$'\033[0;36m'
 
-ui_style() { # ui_style <text>
-    if [[ $UI == gum ]]; then gum style --border rounded --padding "1 2" --foreground 212 "$1"
-    else printf '\n== %s ==\n\n' "$1"; fi
-}
-ui_header() {
-    if [[ $UI == gum ]]; then
-        gum style --foreground 212 --bold "MUZE" | gum style --padding "1 2"
-        printf '\n'
-    else
-        printf '\n=========================\n  M U Z E   installer\n=========================\n\n'
-    fi
-}
-ui_info()  { printf '\033[0;34m  INFO\033[0m    %s\n' "$*"; }
-ui_ok()    { printf '\033[0;32m  OK\033[0m      %s\n' "$*"; }
-ui_warn()  { printf '\033[1;33m  WARN\033[0m    %s\n' "$*"; }
-ui_abort() { printf '\033[0;31m  ABORT\033[0m   %s\n' "$*"; exit 1; }
+ui_clear() { printf '\033[H\033[2J'; }
+ui_hr()    { printf '%s\n' "------------------------------------------------------------"; }
+ui_info()  { printf '%b  INFO%b    %s\n' "$C_BLUE" "$C_RESET" "$*"; }
+ui_ok()    { printf '%b  OK%b      %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+ui_warn()  { printf '%b  WARN%b    %s\n' "$C_YELLOW" "$C_RESET" "$*"; }
+ui_err()   { printf '%b  ERROR%b   %s\n' "$C_RED" "$C_RESET" "$*" >&2; }
+ui_abort() { ui_err "$*"; exit 1; }
 
-ui_choose() { # ui_choose <prompt> <option...> -> echoes chosen
-    local prompt=$1; shift
-    [[ $# -gt 0 ]] || return 1
+ui_title() {
+    printf '\n%bMuze Installer%b\n' "${C_BOLD}${C_CYAN}" "$C_RESET"
+    ui_hr
+    printf '%s\n\n' "$1"
+}
+
+ui_pause() {
+    local msg=${1:-"Press Enter to continue"}
+    read -r -p "  $msg " _ || true
+}
+
+ui_confirm() { # prompt -> 0=yes
+    local prompt=$1 ans
+    [[ $ASSUME_YES -eq 1 ]] && return 0
     while :; do
-        if [[ $UI == gum ]]; then
-            local sel
-            sel=$(printf '%s\n' "$@" | gum choose --header "$prompt" --height 15) || true
-            [[ -n "$sel" ]] && { printf '%s' "$sel"; return 0; }
-        elif [[ $UI == dialog ]]; then
-            local args=() i=0
-            for o in "$@"; do args+=("$((++i))" "$o"); done
-            local n
-            n=$(dialog --clear --stdout --menu "$prompt" 20 70 12 "${args[@]}") || n=""
-            if [[ -n "$n" ]]; then
-                local j=0
-                for o in "$@"; do ((++j)); [[ $j -eq $n ]] && { printf '%s' "$o"; return 0; }; done
-            fi
-        else
-            local i=0 o
-            for o in "$@"; do printf '  %2d) %s\n' "$((++i))" "$o" >&2; done
-            local n j choice=""
-            IFS= read -r -p "  $prompt [1-$#]: " n || n=""
-            j=0
-            for o in "$@"; do
-                ((++j))
-                if [[ "$n" == "$j" ]]; then choice=$o; break; fi
-            done
-            if [[ -n "$choice" ]]; then
-                printf '%s' "$choice"
-                return 0
-            fi
-            printf '  Invalid selection, try again.\n' >&2
-            continue
-        fi
-        # gum/dialog cancelled or returned empty: re-prompt (or fail on EOF in non-interactive)
-        if [[ ! -t 0 ]]; then
-            printf '%s' "$1"
-            return 0
-        fi
-        printf '  Selection required, try again.\n' >&2
+        read -r -p "  $prompt [Y/n]: " ans || { printf '\n'; return 0; }
+        case "${ans:-y}" in
+            [Yy]|[Yy][Ee][Ss]|"") return 0 ;;
+            [Nn]|[Nn][Oo]) return 1 ;;
+            *) printf '  Please answer y or n.\n' ;;
+        esac
     done
 }
 
-ui_multi() { # ui_multi <prompt> <option...> -> echoes chosen lines
-    local prompt=$1; shift
-    [[ $# -gt 0 ]] || return 0
-    if [[ $UI == gum ]]; then
-        printf '%s\n' "$@" | gum choose --no-limit --header "$prompt" --height 15
-    elif [[ $UI == dialog ]]; then
-        local args=() i=0
-        for o in "$@"; do args+=("$((++i))" "$o" off); done
-        local sel
-        sel=$(dialog --clear --stdout --separate-output --checklist "$prompt" 20 70 12 "${args[@]}") || true
-        local j=0
-        for o in "$@"; do ((++j)); grep -qx "$j" <<<"$sel" && printf '%s\n' "$o"; done
-    else
-        local i=0 o
-        for o in "$@"; do printf '  %2d) %s\n' "$((++i))" "$o" >&2; done
-        local sel j
-        IFS= read -r -p "  $prompt (space separated numbers, Enter for none): " sel || sel=""
-        j=0
-        for o in "$@"; do ((++j)); [[ " $sel " == *" $j "* ]] && printf '%s\n' "$o"; done
-    fi
+ui_input() { # prompt default -> echoes value
+    local prompt=$1 def=${2:-} ans
+    read -r -p "  $prompt [$def]: " ans || ans=""
+    printf '%s' "${ans:-$def}"
 }
 
-ui_input() { # ui_input <prompt> <default>
-    local prompt=$1 def=${2:-}
-    if [[ $UI == gum ]]; then gum input --header "$prompt" --value "$def"
-    elif [[ $UI == dialog ]]; then dialog --clear --stdout --inputbox "$prompt" 8 70 "$def"
-    else read -r -p "  $prompt [$def]: " ans; printf '%s' "${ans:-$def}"; fi
+ui_input_required() { # prompt default(optional)
+    local prompt=$1 def=${2:-} v
+    while :; do
+        v=$(ui_input "$prompt" "$def")
+        [[ -n "$v" ]] && { printf '%s' "$v"; return 0; }
+        printf '  Value required.\n'
+    done
 }
 
-ui_password() { # ui_password <prompt>
+ui_password() { # prompt -> echoes password
     local prompt=$1 a b
-    if [[ $UI == gum ]]; then
-        a=$(gum input --password --header "$prompt")
-        b=$(gum input --password --header "Confirm password")
-    elif [[ $UI == dialog ]]; then
-        a=$(dialog --clear --stdout --passwordbox "$prompt" 8 70)
-        b=$(dialog --clear --stdout --passwordbox "Confirm password" 8 70)
-    else
+    while :; do
         read -r -s -p "  $prompt: " a; echo
         read -r -s -p "  Confirm password: " b; echo
-    fi
-    [[ -n "$a" && "$a" == "$b" ]] || ui_abort "passwords empty or do not match"
-    printf '%s' "$a"
+        [[ -z "$a" ]] && { printf '  Password cannot be empty.\n'; continue; }
+        [[ "$a" == "$b" ]] && { printf '%s' "$a"; return 0; }
+        printf '  Passwords do not match, try again.\n'
+    done
 }
 
-ui_confirm() { # ui_confirm <prompt> -> return 0/1
-    local prompt=$1 a
-    if [[ $ASSUME_YES -eq 1 ]]; then return 0; fi
-    if [[ $UI == gum ]]; then gum confirm "$prompt" --affirmative "Yes" --negative "No"
-    elif [[ $UI == dialog ]]; then dialog --clear --stdout --yesno "$prompt" 8 70
-    else
-        while :; do
-            IFS= read -r -p "  $prompt [Y/n]: " a || { printf '\n'; return 0; }
-            case "${a:-y}" in
-                [Yy]|[Yy][Ee][Ss]|"") return 0 ;;
-                [Nn]|[Nn][Oo]) return 1 ;;
-                *) printf '  Please answer y or n.\n' >&2 ;;
-            esac
+ui_choose() { # prompt options... -> echoes chosen option text
+    local prompt=$1; shift
+    local opts=("$@") i choice
+    [[ ${#opts[@]} -gt 0 ]] || return 1
+    while :; do
+        printf '\n  %b%s%b\n' "$C_BOLD" "$prompt" "$C_RESET"
+        for i in "${!opts[@]}"; do
+            printf '    %2d) %s\n' "$((i+1))" "${opts[$i]}"
         done
-    fi
+        read -r -p "  Select [1-${#opts[@]}]: " choice || choice=""
+        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#opts[@]} )); then
+            printf '%s' "${opts[$((choice-1))]}"
+            return 0
+        fi
+        printf '  Invalid selection.\n'
+    done
 }
 
-ui_pager() { # ui_pager <file>
-    if [[ $UI == gum ]] && [[ -t 1 ]]; then gum pager < "$1"
-    else cat "$1"; fi
+ui_choose_default() { # prompt default_index(1-based) options...
+    local prompt=$1 def=$2; shift 2
+    local opts=("$@") i choice
+    while :; do
+        printf '\n  %b%s%b\n' "$C_BOLD" "$prompt" "$C_RESET"
+        for i in "${!opts[@]}"; do
+            local mark="  "; [[ $((i+1)) -eq $def ]] && mark="* "
+            printf '  %s%2d) %s\n' "$mark" "$((i+1))" "${opts[$i]}"
+        done
+        read -r -p "  Select [1-${#opts[@]}, default $def]: " choice || choice=""
+        [[ -z "$choice" ]] && choice=$def
+        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#opts[@]} )); then
+            printf '%s' "${opts[$((choice-1))]}"
+            return 0
+        fi
+        printf '  Invalid selection.\n'
+    done
 }
 
-# --------------------------------------------------------------- TOML <-> env -
-# install.toml is the contract; python3's tomllib turns it into shell-safe
-# KEY=value lines. python3 is in the Muze ISO package set.
-toml_to_env() { # toml_to_env <file>
+ui_toggle_menu() { # title; uses arrays: TM_LABELS TM_STATE (0/1)
+    local title=$1 choice
+    while :; do
+        printf '\n  %b%s%b\n' "$C_BOLD" "$title" "$C_RESET"
+        printf '  (enter number to toggle, "a" all, "n" none, "d" done)\n'
+        local i mark
+        for i in "${!TM_LABELS[@]}"; do
+            mark="[ ]"; [[ ${TM_STATE[$i]} -eq 1 ]] && mark="[x]"
+            printf '    %2d) %s %s\n' "$((i+1))" "$mark" "${TM_LABELS[$i]}"
+        done
+        read -r -p "  > " choice || choice="d"
+        case "$choice" in
+            d|D|"") return 0 ;;
+            a|A) for i in "${!TM_STATE[@]}"; do TM_STATE[$i]=1; done ;;
+            n|N) for i in "${!TM_STATE[@]}"; do TM_STATE[$i]=0; done ;;
+            *)
+                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#TM_LABELS[@]} )); then
+                    local idx=$((choice-1))
+                    TM_STATE[$idx]=$(( 1 - TM_STATE[$idx] ))
+                else
+                    printf '  Invalid input.\n'
+                fi
+                ;;
+        esac
+    done
+}
+
+# --------------------------------------------------------------- TOML helpers -
+toml_to_env() { # file -> KEY=VALUE lines (raw keys, uppercased path)
     python3 - "$1" <<'PY'
 import sys, tomllib, shlex
-with open(sys.argv[1], "rb") as f: d = tomllib.load(f)
+with open(sys.argv[1], 'rb') as f:
+    d = tomllib.load(f)
+
 def emit(prefix, obj):
     for k, v in obj.items():
         key = prefix + k.upper()
-        if isinstance(v, dict): emit(prefix + k.upper() + "_", v)
-        elif isinstance(v, bool): print(f"{key}={'true' if v else 'false'}")
-        elif isinstance(v, list): print(f"{key}={shlex.quote(' '.join(map(str,v)))}")
-        else: print(f"{key}={shlex.quote(str(v))}")
-emit("", d)
+        if isinstance(v, dict):
+            emit(key + '_', v)
+        elif isinstance(v, bool):
+            print(f"{key}={'true' if v else 'false'}")
+        elif isinstance(v, list):
+            print(f"{key}={shlex.quote(' '.join(map(str, v)))}")
+        elif v is None:
+            print(f"{key}=")
+        else:
+            print(f"{key}={shlex.quote(str(v))}")
+
+emit('', d)
 PY
 }
 
-load_config() { # load_config <file> -> exports CFG_* variables
+load_config() { # file -> exports CFG_*
     local f=$1
     [[ -f "$f" ]] || ui_abort "config not found: $f"
     local env_file; env_file=$(mktemp)
@@ -200,159 +198,384 @@ load_config() { # load_config <file> -> exports CFG_* variables
     rm -f "$env_file"
 }
 
-# ------------------------------------------------------------------ detection -
+toml_quote_array() { # items...
+    local out="" x
+    for x in "$@"; do
+        [[ -n "$x" ]] || continue
+        [[ -n "$out" ]] && out+=", "
+        out+="\"$x\""
+    done
+    printf '[%s]' "$out"
+}
+
+write_config() { # path
+    local f=$1
+    mkdir -p "$(dirname "$f")"
+    cat > "$f" <<EOF
+# Muze install.toml -- generated/edited by muze-install
+version = 1
+
+[system]
+hostname     = "$CFG_SYSTEM_HOSTNAME"
+username     = "$CFG_SYSTEM_USERNAME"
+locale       = "$CFG_SYSTEM_LOCALE"
+keymap       = "$CFG_SYSTEM_KEYMAP"
+timezone     = "$CFG_SYSTEM_TIMEZONE"
+password_set = true
+
+[disk]
+device       = "$CFG_DISK_DEVICE"
+mode         = "$CFG_DISK_MODE"
+filesystem   = "$CFG_DISK_FILESYSTEM"
+encrypt      = $CFG_DISK_ENCRYPT
+efi_size_mb  = $CFG_DISK_EFI_SIZE_MB
+efi_device   = "$CFG_DISK_EFI_DEVICE"
+root_device  = "$CFG_DISK_ROOT_DEVICE"
+
+[boot]
+bootloader        = "$CFG_BOOT_BOOTLOADER"
+chainload_windows = $CFG_BOOT_CHAINLOAD_WINDOWS
+kernels           = $(toml_quote_array $CFG_BOOT_KERNELS)
+snapshots         = $CFG_BOOT_SNAPSHOTS
+
+[packages]
+source   = "$CFG_PACKAGES_SOURCE"
+profiles = $(toml_quote_array $CFG_PACKAGES_PROFILES)
+browser  = "$CFG_PACKAGES_BROWSER"
+flatpak  = $CFG_PACKAGES_FLATPAK
+aur      = $CFG_PACKAGES_AUR
+extra    = $(toml_quote_array $CFG_PACKAGES_EXTRA)
+
+[agent]
+level           = ${CFG_AGENT_LEVEL:-1}
+snapshot_before = $CFG_AGENT_SNAPSHOT_BEFORE
+
+[muze]
+theme_mode  = "$CFG_MUZE_THEME_MODE"
+theme_apps  = $CFG_MUZE_THEME_APPS
+bar_height  = ${CFG_MUZE_BAR_HEIGHT:-32}
+bar_opacity = ${CFG_MUZE_BAR_OPACITY:-100}
+profile     = "$CFG_MUZE_PROFILE"
+EOF
+}
+
+# --------------------------------------------------------------- helpers ------
+detect_env() {
+    local f; f=$(mktemp)
+    bash "$SELF_DIR/muze-detect" --shell > "$f"
+    # shellcheck disable=SC1090
+    . "$f"
+    rm -f "$f"
+}
+
+list_disks() {
+    # name|size|model lines
+    lsblk -dpno NAME,SIZE,MODEL,TYPE 2>/dev/null | awk '$4=="disk"{ $4=""; sub(/[[:space:]]+$/,""); gsub(/[[:space:]]+/,"|"); print }' \
+        | grep -E '^/dev/(sd|hd|vd|nvme|mmcblk|xv)' || true
+}
+
+list_timezones() {
+    if command -v timedatectl >/dev/null 2>&1; then
+        timedatectl list-timezones 2>/dev/null
+    else
+        find /usr/share/zoneinfo -type f 2>/dev/null | sed 's|^/usr/share/zoneinfo/||' | sort
+    fi
+}
+
+# ------------------------------------------------------------------ modes -----
 if [[ $DETECT_ONLY -eq 1 ]]; then
     bash "$SELF_DIR/muze-detect" pretty
     exit 0
 fi
-
 if [[ $DO_REPAIR -eq 1 ]]; then
     exec bash "$SELF_DIR/muze-repair"
 fi
 
 # ------------------------------------------------------------------ wizard ----
-ui_header
-ui_info "UI backend: $UI   log: $LOGFILE"
+ui_clear
+ui_title "Hardware detection"
+ui_info "UI: pure bash (no gum)   log: $LOGFILE"
+detect_env
+bash "$SELF_DIR/muze-detect" pretty || true
+printf '\n'
 
-DETECT_ENV=$(mktemp)
-bash "$SELF_DIR/muze-detect" --shell > "$DETECT_ENV"
-# shellcheck disable=SC1090
-. "$DETECT_ENV"
-rm -f "$DETECT_ENV"
+# Defaults from detection + sane fallbacks
+CFG_VERSION=1
+CFG_SYSTEM_HOSTNAME="muze"
+CFG_SYSTEM_USERNAME="user"
+CFG_SYSTEM_LOCALE="en_US.UTF-8"
+CFG_SYSTEM_KEYMAP="us"
+CFG_SYSTEM_TIMEZONE="$(timedatectl show -p Timezone --value 2>/dev/null || echo UTC)"
+CFG_DISK_DEVICE="${FIRST_DISK:-}"
+CFG_DISK_MODE="${MODE:-fullwipe}"
+CFG_DISK_FILESYSTEM="btrfs"
+CFG_DISK_ENCRYPT="${ENCRYPT:-false}"
+CFG_DISK_EFI_SIZE_MB=512
+CFG_DISK_EFI_DEVICE=""
+CFG_DISK_ROOT_DEVICE=""
+CFG_BOOT_BOOTLOADER="limine"
+CFG_BOOT_CHAINLOAD_WINDOWS="true"
+[[ -n "${WIN_EFI:-}" ]] || CFG_BOOT_CHAINLOAD_WINDOWS="false"
+CFG_BOOT_KERNELS="linux"
+CFG_BOOT_SNAPSHOTS="true"
+CFG_PACKAGES_SOURCE="auto"
+CFG_PACKAGES_PROFILES="${PROFILES:-minimal}"
+CFG_PACKAGES_BROWSER="chromium"
+CFG_PACKAGES_FLATPAK="false"
+CFG_PACKAGES_AUR="false"
+CFG_PACKAGES_EXTRA=""
+CFG_AGENT_LEVEL=1
+CFG_AGENT_SNAPSHOT_BEFORE="true"
+CFG_MUZE_THEME_MODE="wallpaper"
+CFG_MUZE_THEME_APPS="true"
+CFG_MUZE_BAR_HEIGHT=32
+CFG_MUZE_BAR_OPACITY=100
+CFG_MUZE_PROFILE="default"
 
-if [[ -z "$CONFIG" ]]; then
-    ui_style "Step 1/6 · Hardware (L1)"
-    bash "$SELF_DIR/muze-detect" pretty
+PASSWORD=""
 
-    CONFIG=${MUZE_CONFIG:-/root/install.toml}
-    if ui_confirm "Use the detected proposal as a starting point?"; then
-        bash "$SELF_DIR/muze-detect" --toml > "$CONFIG"
-    else
-        cp "$SELF_DIR/install.toml.example" "$CONFIG"
-    fi
-
-    ui_style "Step 2/6 · Identity"
-    hostname_v=$(ui_input "Hostname" "muze")
-    username_v=$(ui_input "Username" "user")
-    timezone_v=$(ui_input "Timezone" "$(timedatectl show -p Timezone --value 2>/dev/null || echo UTC)")
-    keymap_v=$(ui_input "Console keymap" "us")
-    PASSWORD=$(ui_password "Password for $username_v (also root)")
-
-    ui_style "Step 3/6 · Disk"
-    local_disks=()
-    while IFS='|' read -r name size model; do
-        [[ -z "$name" || "$name" == "$BOOT_DISK" ]] && continue
-        local_disks+=("$name ($size) $model")
-    done < <(lsblk -dpno NAME,SIZE,MODEL 2>/dev/null | tr -s ' ' '|' \
-                | grep -E '^/dev/(sd|hd|vd|nvme|mmcblk|xv)' || true)
-    [[ ${#local_disks[@]} -gt 0 ]] || ui_abort "no installable disk found"
-    chosen=$(ui_choose "Select the target disk" "${local_disks[@]}")
-    disk_v=${chosen%% *}
-
-    if [[ -n "${WIN_EFI:-}" ]]; then
-        mode_v=$(ui_choose "Windows EFI found on $WIN_EFI. Install mode?" \
-            "dualboot" "fullwipe" "manual")
-    else
-        mode_v=$(ui_choose "Install mode" "fullwipe" "dualboot" "manual")
-    fi
-    encrypt_v=$(ui_choose "Encrypt root with LUKS2?" "yes" "no")
-    [[ "$encrypt_v" == "yes" ]] && encrypt_v=true || encrypt_v=false
-
-    ui_style "Step 4/6 · Packages"
-    profiles_v=$(ui_multi "Select package profiles (space/enter to choose)" \
-        "minimal" "student" "dev" "gaming" "creative")
-    [[ -z "$profiles_v" ]] && profiles_v="minimal"
-    browser_v=$(ui_choose "Browser" "chromium" "firefox" "zen")
-    flatpak_v=$(ui_choose "Enable Flatpak?" "no" "yes")
-    [[ "$flatpak_v" == "yes" ]] && flatpak_v=true || flatpak_v=false
-    source_v=$(ui_choose "Package source" "auto" "offline" "online")
-
-    ui_style "Step 5/6 · Muze defaults"
-    theme_v=$(ui_choose "Colour mode" "wallpaper" "theme" "light")
-    apps_v=$(ui_choose "Theme third-party GTK apps?" "yes" "no")
-    [[ "$apps_v" == "yes" ]] && apps_v=true || apps_v=false
-
-    # Rewrite the config with the answers (keeping the documented schema).
-    python3 - "$CONFIG" "$hostname_v" "$username_v" "$timezone_v" "$keymap_v" \
-                  "$disk_v" "$mode_v" "$encrypt_v" "$profiles_v" "$browser_v" \
-                  "$flatpak_v" "$source_v" "$theme_v" "$apps_v" <<'PY'
-import sys, tomllib, pathlib
-f = pathlib.Path(sys.argv[1])
-d = tomllib.loads(f.read_text())
-(h, u, tz, km, disk, mode, enc, profiles, browser, flatpak, src, theme, apps) = sys.argv[2:]
-d.setdefault("system", {}).update(hostname=h, username=u, timezone=tz, keymap=km, password_set=True)
-d.setdefault("disk", {}).update(device=disk, mode=mode, encrypt=(enc=="true"))
-d.setdefault("packages", {}).update(profiles=profiles.split(), browser=browser,
-                                    flatpak=(flatpak=="true"), source=src)
-d.setdefault("muze", {}).update(theme_mode=theme, theme_apps=(apps=="true"))
-def dump(o, indent=""):
-    lines=[]
-    for k,v in o.items():
-        if isinstance(v,dict):
-            lines.append(f"\n[{k}]" if not indent else f"\n[{k}]")
-            lines.extend(dump(v, indent+"  "))
-        elif isinstance(v,bool): lines.append(f"{k} = {'true' if v else 'false'}")
-        elif isinstance(v,list): lines.append(f"{k} = [" + ", ".join(f'\"{x}\"' for x in v) + "]")
-        elif isinstance(v,(int,float)): lines.append(f"{k} = {v}")
-        else: lines.append(f"{k} = \"{v}\"")
-    return lines
-out = "# Muze install.toml -- reviewed by the user, applied by muze-install\n"
-out += "version = 1\n"
-out += "\n".join(dump({k:v for k,v in d.items() if k!="version"})) + "\n"
-f.write_text(out)
-PY
-    ui_ok "wrote $CONFIG"
+if [[ -n "$CONFIG" ]]; then
+    ui_info "Using config: $CONFIG"
+    load_config "$CONFIG"
 else
-    ui_info "using config: $CONFIG"
-    PASSWORD=""
+    CONFIG=${MUZE_CONFIG:-/root/install.toml}
+
+    # ---------------------------- 1. User -----------------------------------
+    ui_title "Step 1/8 - User"
+    CFG_SYSTEM_USERNAME=$(ui_input_required "Username" "$CFG_SYSTEM_USERNAME")
+    CFG_SYSTEM_HOSTNAME=$(ui_input_required "Hostname" "$CFG_SYSTEM_HOSTNAME")
+    PASSWORD=$(ui_password "Password for $CFG_SYSTEM_USERNAME (also root)")
+    CFG_SYSTEM_KEYMAP=$(ui_input "Console keymap" "$CFG_SYSTEM_KEYMAP")
+    CFG_SYSTEM_LOCALE=$(ui_input "Locale" "$CFG_SYSTEM_LOCALE")
+
+    # ---------------------------- 2. Timezone --------------------------------
+    ui_title "Step 2/8 - Timezone"
+    if ui_confirm "Select timezone interactively? (No = enter manually)"; then
+        # Region selection
+        mapfile -t _regions < <(list_timezones | awk -F/ '{print $1}' | sort -u)
+        if [[ ${#_regions[@]} -gt 0 ]]; then
+            printf '\n  Regions:\n'
+            local_i=0
+            for r in "${_regions[@]}"; do printf '    %3d) %s\n' "$((++local_i))" "$r"; done
+            while :; do
+                read -r -p "  Choose region number (or type name/search): " tz_in || tz_in="UTC"
+                if [[ "$tz_in" =~ ^[0-9]+$ ]] && (( tz_in>=1 && tz_in<=${#_regions[@]} )); then
+                    region=${_regions[$((tz_in-1))]}
+                    break
+                elif printf '%s\n' "${_regions[@]}" | grep -qx "$tz_in"; then
+                    region=$tz_in; break
+                else
+                    # treat as search/manual
+                    region=""
+                    if list_timezones | grep -qx "$tz_in"; then CFG_SYSTEM_TIMEZONE="$tz_in"; break 2; fi
+                    printf '  Not found. Try a number or exact region/timezone.\n'
+                fi
+            done
+            if [[ -n "${region:-}" ]]; then
+                mapfile -t _tzs < <(list_timezones | grep "^${region}/" || true)
+                if [[ ${#_tzs[@]} -eq 0 ]]; then
+                    CFG_SYSTEM_TIMEZONE="$region"
+                else
+                    printf '\n  Timezones in %s:\n' "$region"
+                    local_i=0
+                    for t in "${_tzs[@]}"; do printf '    %3d) %s\n' "$((++local_i))" "$t"; done
+                    while :; do
+                        read -r -p "  Choose timezone number (or type full name): " tz_in || tz_in="$region"
+                        if [[ "$tz_in" =~ ^[0-9]+$ ]] && (( tz_in>=1 && tz_in<=${#_tzs[@]} )); then
+                            CFG_SYSTEM_TIMEZONE=${_tzs[$((tz_in-1))]}; break
+                        elif list_timezones | grep -qx "$tz_in"; then
+                            CFG_SYSTEM_TIMEZONE="$tz_in"; break
+                        else
+                            printf '  Invalid selection.\n'
+                        fi
+                    done
+                fi
+            fi
+        else
+            CFG_SYSTEM_TIMEZONE=$(ui_input_required "Timezone" "$CFG_SYSTEM_TIMEZONE")
+        fi
+    else
+        CFG_SYSTEM_TIMEZONE=$(ui_input_required "Timezone (e.g. Europe/Bucharest)" "$CFG_SYSTEM_TIMEZONE")
+    fi
+    ui_ok "Timezone: $CFG_SYSTEM_TIMEZONE"
+
+    # ---------------------------- 3. Disk ------------------------------------
+    ui_title "Step 3/8 - Disk"
+    DISK_LINES=()
+    DISK_OPTS=()
+    while IFS='|' read -r name size model _; do
+        [[ -z "$name" ]] && continue
+        [[ -n "${BOOT_DISK:-}" && "$name" == "$BOOT_DISK" ]] && continue
+        DISK_LINES+=("$name|$size|$model")
+        DISK_OPTS+=("$name  (${size})  ${model}")
+    done < <(list_disks)
+    [[ ${#DISK_OPTS[@]} -gt 0 ]] || ui_abort "No installable disk found"
+
+    printf '  Available disks:\n'
+    for d in "${DISK_LINES[@]}"; do
+        IFS='|' read -r n s m <<<"$d"
+        printf '    - %s  size=%s  model=%s\n' "$n" "$s" "$m"
+        lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINTS "$n" 2>/dev/null | sed 's/^/      /' || true
+    done
+    chosen_disk=$(ui_choose "Select target disk" "${DISK_OPTS[@]}")
+    CFG_DISK_DEVICE=${chosen_disk%% *}
+    ui_ok "Disk: $CFG_DISK_DEVICE"
+
+    # ---------------------------- 4. Install method (dualboot/mode) ----------
+    ui_title "Step 4/8 - Install method and dualboot"
+    mode_opts=("fullwipe (erase entire disk)" "dualboot (use largest free region, keep other OS)" "manual (use existing EFI/root partitions)")
+    if [[ -n "${WIN_EFI:-}" ]]; then
+        ui_info "Windows EFI detected: ${WIN_EFI}"
+        mode_def=2
+    else
+        mode_def=1
+    fi
+    mode_sel=$(ui_choose_default "Install mode" "$mode_def" "${mode_opts[@]}")
+    case "$mode_sel" in
+        dualboot*) CFG_DISK_MODE="dualboot" ;;
+        manual*)   CFG_DISK_MODE="manual" ;;
+        *)         CFG_DISK_MODE="fullwipe" ;;
+    esac
+    if [[ "$CFG_DISK_MODE" == "manual" ]]; then
+        CFG_DISK_EFI_DEVICE=$(ui_input_required "Existing EFI partition (e.g. /dev/nvme0n1p1)" "")
+        CFG_DISK_ROOT_DEVICE=$(ui_input_required "Existing root partition (e.g. /dev/nvme0n1p2)" "")
+        [[ -b "$CFG_DISK_EFI_DEVICE" && -b "$CFG_DISK_ROOT_DEVICE" ]] || ui_abort "Manual partitions must be valid block devices"
+    fi
+    enc_sel=$(ui_choose_default "Encrypt root with LUKS2?" 2 "yes" "no")
+    [[ "$enc_sel" == "yes" ]] && CFG_DISK_ENCRYPT=true || CFG_DISK_ENCRYPT=false
+
+    # ---------------------------- 5. Install source (online/offline) ---------
+    ui_title "Step 5/8 - Install method (package source)"
+    src_sel=$(ui_choose_default "Package source" 1 "auto (offline repo if available, else online)" "online" "offline")
+    case "$src_sel" in
+        online*)  CFG_PACKAGES_SOURCE="online" ;;
+        offline*) CFG_PACKAGES_SOURCE="offline" ;;
+        *)        CFG_PACKAGES_SOURCE="auto" ;;
+    esac
+    ui_ok "Source: $CFG_PACKAGES_SOURCE"
+
+    # ---------------------------- 6. Packages + extras -----------------------
+    ui_title "Step 6/8 - Packages and profiles"
+    # Profiles
+    mapfile -t _profiles < <(find "$MUZE_ROOT/packages/profiles" -maxdepth 1 -type f -name '*.packages' 2>/dev/null | sed 's#.*/##; s/\.packages$//' | sort)
+    TM_LABELS=(); TM_STATE=()
+    for p in "${_profiles[@]}"; do
+        TM_LABELS+=("profile: $p")
+        # minimal on by default + detected ones
+        st=0
+        [[ "$p" == "minimal" ]] && st=1
+        [[ " $CFG_PACKAGES_PROFILES " == *" $p "* ]] && st=1
+        TM_STATE+=("$st")
+    done
+    ui_toggle_menu "Select package profiles (minimal recommended)"
+    SEL_PROFILES=()
+    for i in "${!_profiles[@]}"; do
+        [[ ${TM_STATE[$i]} -eq 1 ]] && SEL_PROFILES+=("${_profiles[$i]}")
+    done
+    [[ ${#SEL_PROFILES[@]} -eq 0 ]] && SEL_PROFILES=("minimal")
+    CFG_PACKAGES_PROFILES="${SEL_PROFILES[*]}"
+
+    # Extra packages from selected profiles (easy pick)
+    EXTRA_CANDIDATES=()
+    for p in "${SEL_PROFILES[@]}"; do
+        pf="$MUZE_ROOT/packages/profiles/$p.packages"
+        [[ -f "$pf" ]] || continue
+        while IFS= read -r pkg; do
+            [[ -n "$pkg" ]] && EXTRA_CANDIDATES+=("$pkg")
+        done < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$pf" | grep -v '^$' || true)
+    done
+    # Also offer common extras file if present
+    for f in "$MUZE_ROOT/packages/desktop.packages" "$MUZE_ROOT/packages/hardware.packages"; do
+        [[ -f "$f" ]] || continue
+    done
+    mapfile -t EXTRA_CANDIDATES < <(printf '%s\n' "${EXTRA_CANDIDATES[@]}" | awk '!seen[$0]++')
+
+    if [[ ${#EXTRA_CANDIDATES[@]} -gt 0 ]] && ui_confirm "Pick extra packages from selected profiles/list?"; then
+        TM_LABELS=(); TM_STATE=()
+        for pkg in "${EXTRA_CANDIDATES[@]}"; do TM_LABELS+=("$pkg"); TM_STATE+=(0); done
+        ui_toggle_menu "Extra packages (toggle to add explicitly)"
+        PICKED_EXTRAS=()
+        for i in "${!EXTRA_CANDIDATES[@]}"; do
+            [[ ${TM_STATE[$i]} -eq 1 ]] && PICKED_EXTRAS+=("${EXTRA_CANDIDATES[$i]}")
+        done
+    else
+        PICKED_EXTRAS=()
+    fi
+    read -r -p "  Additional extra packages (space-separated, or Enter for none): " manual_extras || manual_extras=""
+    # merge
+    CFG_PACKAGES_EXTRA="$(printf '%s\n' ${PICKED_EXTRAS[@]:-} $manual_extras | awk 'NF && !seen[$0]++{printf "%s ", $0}' | sed 's/[[:space:]]*$//')"
+
+    browser_sel=$(ui_choose_default "Browser" 1 "chromium" "firefox" "zen")
+    CFG_PACKAGES_BROWSER="$browser_sel"
+    fp_sel=$(ui_choose_default "Enable Flatpak?" 2 "yes" "no")
+    [[ "$fp_sel" == "yes" ]] && CFG_PACKAGES_FLATPAK=true || CFG_PACKAGES_FLATPAK=false
+    aur_sel=$(ui_choose_default "Enable AUR packages post-install (needs network)?" 2 "yes" "no")
+    [[ "$aur_sel" == "yes" ]] && CFG_PACKAGES_AUR=true || CFG_PACKAGES_AUR=false
+
+    # ---------------------------- 7. Bootloader & snapshots ------------------
+    ui_title "Step 7/8 - Bootloader and snapshots"
+    bl_sel=$(ui_choose_default "Bootloader" 1 "limine (recommended)" "systemd-boot")
+    case "$bl_sel" in
+        systemd-boot*) CFG_BOOT_BOOTLOADER="systemd-boot" ;;
+        *)             CFG_BOOT_BOOTLOADER="limine" ;;
+    esac
+    snap_sel=$(ui_choose_default "Enable Btrfs snapshot support?" 1 "yes" "no")
+    [[ "$snap_sel" == "yes" ]] && CFG_BOOT_SNAPSHOTS=true || CFG_BOOT_SNAPSHOTS=false
+    CFG_AGENT_SNAPSHOT_BEFORE=$CFG_BOOT_SNAPSHOTS
+    if [[ "$CFG_DISK_MODE" == "dualboot" || -n "${WIN_EFI:-}" ]]; then
+        cw_sel=$(ui_choose_default "Chainload Windows when detected?" 1 "yes" "no")
+        [[ "$cw_sel" == "yes" ]] && CFG_BOOT_CHAINLOAD_WINDOWS=true || CFG_BOOT_CHAINLOAD_WINDOWS=false
+    fi
+
+    # ---------------------------- 8. Muze defaults ---------------------------
+    ui_title "Step 8/8 - Muze defaults"
+    theme_sel=$(ui_choose_default "Theme mode" 1 "wallpaper" "theme" "light")
+    CFG_MUZE_THEME_MODE="$theme_sel"
+
+    write_config "$CONFIG"
+    ui_ok "Configuration written to $CONFIG"
 fi
 
-# --------------------------------------------------------------- diff / approve -
+# --------------------------------------------------------------- review/apply -
 load_config "$CONFIG"
 : "${CFG_VERSION:=1}" "${CFG_SYSTEM_HOSTNAME:=muze}" "${CFG_SYSTEM_USERNAME:=user}"
 : "${CFG_SYSTEM_LOCALE:=en_US.UTF-8}" "${CFG_SYSTEM_KEYMAP:=us}" "${CFG_SYSTEM_TIMEZONE:=UTC}"
 : "${CFG_DISK_DEVICE:=}" "${CFG_DISK_MODE:=fullwipe}" "${CFG_DISK_FILESYSTEM:=btrfs}"
-: "${CFG_DISK_ENCRYPT:=false}" "${CFG_DISK_EFI_SIZE_MB:=512}"
-: "${CFG_BOOT_BOOTLOADER:=limine}" "${CFG_BOOT_CHAINLOAD_WINDOWS:=true}"
-: "${CFG_PACKAGES_SOURCE:=auto}" "${CFG_PACKAGES_PROFILES:=minimal}"
-: "${CFG_PACKAGES_BROWSER:=chromium}" "${CFG_PACKAGES_FLATPAK:=false}"
-: "${CFG_PACKAGES_AUR:=false}" "${CFG_PACKAGES_EXTRA:=}"
+: "${CFG_DISK_ENCRYPT:=false}" "${CFG_DISK_EFI_SIZE_MB:=512}" "${CFG_DISK_EFI_DEVICE:=}" "${CFG_DISK_ROOT_DEVICE:=}"
+: "${CFG_BOOT_BOOTLOADER:=limine}" "${CFG_BOOT_CHAINLOAD_WINDOWS:=true}" "${CFG_BOOT_KERNELS:=linux}" "${CFG_BOOT_SNAPSHOTS:=true}"
+: "${CFG_PACKAGES_SOURCE:=auto}" "${CFG_PACKAGES_PROFILES:=minimal}" "${CFG_PACKAGES_BROWSER:=chromium}"
+: "${CFG_PACKAGES_FLATPAK:=false}" "${CFG_PACKAGES_AUR:=false}" "${CFG_PACKAGES_EXTRA:=}"
 : "${CFG_AGENT_LEVEL:=1}" "${CFG_AGENT_SNAPSHOT_BEFORE:=true}"
-: "${CFG_MUZE_THEME_MODE:=wallpaper}" "${CFG_MUZE_THEME_APPS:=true}"
-: "${CFG_MUZE_BAR_HEIGHT:=32}" "${CFG_MUZE_BAR_OPACITY:=100}"
+: "${CFG_MUZE_THEME_MODE:=wallpaper}" "${CFG_MUZE_THEME_APPS:=true}" "${CFG_MUZE_BAR_HEIGHT:=32}" "${CFG_MUZE_BAR_OPACITY:=100}" "${CFG_MUZE_PROFILE:=default}"
 
-ui_style "Step 6/6 · Review install.toml"
-ui_info "This is the complete diff from a bare Arch system. Nothing has been written to disk yet."
-ui_pager "$CONFIG"
+ui_title "Review configuration"
+printf '  System:     %s@%s  tz=%s  keymap=%s  locale=%s\n' "$CFG_SYSTEM_USERNAME" "$CFG_SYSTEM_HOSTNAME" "$CFG_SYSTEM_TIMEZONE" "$CFG_SYSTEM_KEYMAP" "$CFG_SYSTEM_LOCALE"
+printf '  Disk:       %s  mode=%s  fs=%s  encrypt=%s\n' "$CFG_DISK_DEVICE" "$CFG_DISK_MODE" "$CFG_DISK_FILESYSTEM" "$CFG_DISK_ENCRYPT"
+[[ "$CFG_DISK_MODE" == "manual" ]] && printf '              efi=%s  root=%s\n' "$CFG_DISK_EFI_DEVICE" "$CFG_DISK_ROOT_DEVICE"
+printf '  Boot:       bootloader=%s  snapshots=%s  chainload_windows=%s\n' "$CFG_BOOT_BOOTLOADER" "$CFG_BOOT_SNAPSHOTS" "$CFG_BOOT_CHAINLOAD_WINDOWS"
+printf '  Packages:   source=%s  profiles=[%s]  browser=%s  flatpak=%s  aur=%s\n' "$CFG_PACKAGES_SOURCE" "$CFG_PACKAGES_PROFILES" "$CFG_PACKAGES_BROWSER" "$CFG_PACKAGES_FLATPAK" "$CFG_PACKAGES_AUR"
+printf '  Extra pkgs: %s\n' "${CFG_PACKAGES_EXTRA:-<none>}"
+printf '  Muze:       theme=%s\n' "$CFG_MUZE_THEME_MODE"
+printf '\n  Config file: %s\n\n' "$CONFIG"
+cat "$CONFIG" || true
 printf '\n'
-if ! ui_confirm "Apply this configuration?"; then
-    ui_info "Cancelled. Edit $CONFIG and re-run: muze-install --config $CONFIG"
-    exit 0
-fi
-if [[ $ASSUME_YES -eq 0 ]] && ui_confirm "Open install.toml in an editor first?"; then
-    "${EDITOR:-nano}" "$CONFIG"
-    load_config "$CONFIG"
-fi
 
 if [[ $DRY_RUN -eq 1 ]]; then
-    ui_style "Dry run -- nothing will be written to disk"
-    printf '  disk      : %s (mode %s, encrypt %s)\n' "$CFG_DISK_DEVICE" "$CFG_DISK_MODE" "$CFG_DISK_ENCRYPT"
-    printf '  packages  : source %s, profiles %s, browser %s\n' \
-        "$CFG_PACKAGES_SOURCE" "$CFG_PACKAGES_PROFILES" "$CFG_PACKAGES_BROWSER"
-    printf '  system    : %s@%s, %s, %s\n' \
-        "$CFG_SYSTEM_USERNAME" "$CFG_SYSTEM_HOSTNAME" "$CFG_SYSTEM_LOCALE" "$CFG_SYSTEM_TIMEZONE"
-    printf '  muze      : %s theme, bar %spx @ %s%%\n' \
-        "$CFG_MUZE_THEME_MODE" "$CFG_MUZE_BAR_HEIGHT" "$CFG_MUZE_BAR_OPACITY"
-    printf '\n  Re-run without --dry-run to install.\n'
+    ui_ok "Dry run complete. Nothing written to disk."
     exit 0
+fi
+
+ui_confirm "Apply this configuration now?" || { ui_info "Cancelled. Edit $CONFIG and re-run with --config."; exit 0; }
+if [[ $ASSUME_YES -eq 0 ]] && ui_confirm "Edit config in ${EDITOR:-nano} before applying?"; then
+    "${EDITOR:-nano}" "$CONFIG"
+    load_config "$CONFIG"
 fi
 
 if [[ -z "$PASSWORD" ]]; then
     PASSWORD=$(ui_password "Password for $CFG_SYSTEM_USERNAME (also root)")
 fi
 
-# ------------------------------------------------------------------ apply -----
-[[ $EUID -eq 0 ]] || ui_abort "the installer must run as root"
+[[ $EUID -eq 0 ]] || ui_abort "Installer must run as root"
 bash "$SELF_DIR/lib/apply.sh" "$CONFIG" "$PASSWORD" "$LOGFILE"
-ui_ok "installation complete. Log: $LOGFILE"
+ui_ok "Installation complete. Log: $LOGFILE"
 if ui_confirm "Reboot now?"; then reboot; fi

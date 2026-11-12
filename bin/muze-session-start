@@ -40,7 +40,13 @@ fi
 
 # 4. The shell itself (QuickShell auto-reloads on config changes)
 if command -v qs >/dev/null 2>&1; then
-    pgrep -f '/bin/qs' >/dev/null 2>&1 || qs -n -d >/dev/null 2>&1 || log "quickshell failed to start"
+    if ! pgrep -x qs >/dev/null 2>&1; then
+        qs -n -d >/dev/null 2>&1 &
+        sleep 0.3
+        if ! pgrep -x qs >/dev/null 2>&1; then
+            qs >/dev/null 2>&1 &
+        fi
+    fi
 fi
 
 # 5. Idle / lock -- muze-idle generates the hypridle config from the user's

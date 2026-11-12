@@ -29,4 +29,10 @@ fi
 # The live user may install without a password.
 chmod 440 /etc/sudoers.d/live 2>/dev/null || true
 
+# Enable core services in the live environment.
+systemctl enable NetworkManager.service 2>/dev/null || true
+systemctl enable bluetooth.service 2>/dev/null || true
+systemctl enable sddm.service 2>/dev/null || true
+systemctl enable muze-live-setup.service 2>/dev/null || true
+
 exit 0

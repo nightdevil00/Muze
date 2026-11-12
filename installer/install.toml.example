@@ -1,68 +1,59 @@
-# Muze install contract -- install.toml
+# Muze install.toml - configuration contract for muze-install.
+# Edit and run: sudo muze-install --config install.toml
 #
-# This is the single source of truth for an install. The agent (L1) proposes
-# it, the user sees it as a list of differences and approves or edits it, and
-# `muze-install --config install.toml` applies it identically every time.
-# Nothing is executed until the user confirms.
-#
-# Copy to install.toml, edit, then run:  muze-install --config install.toml
+# The installer wizard can generate this file. Applying the same config
+# should reproduce the same install choices.
 
 version = 1
 
 [system]
-hostname    = "muze"
-username    = "user"
-locale      = "en_US.UTF-8"
-keymap      = "us"
-timezone    = "Europe/Bucharest"
-# Set after the password prompt; never store the plaintext password here.
+hostname     = "muze"
+username     = "user"
+locale       = "en_US.UTF-8"
+keymap       = "us"
+timezone     = "Europe/Bucharest"
 password_set = false
 
 [disk]
-# /dev/... -- the installer refuses to touch the device the ISO booted from.
-device      = "/dev/nvme0n1"
-# "fullwipe" (erase disk) | "dualboot" (use largest free region) | "manual"
-mode        = "fullwipe"
-filesystem  = "btrfs"
-# LUKS2 root encryption. L1 defaults this to true on laptops.
-encrypt     = true
-efi_size_mb = 512
-# Optional: pre-detected free region for dualboot (filled by muze-detect).
-free_start  = ""
-free_end    = ""
-# mode = "manual" uses these two pre-existing partitions instead of touching
-# the partition table. Leave empty for fullwipe/dualboot.
-efi_device  = ""
-root_device = ""
+# Target disk for fullwipe/dualboot modes (installer refuses the live USB).
+device       = "/dev/nvme0n1"
+# fullwipe | dualboot | manual
+mode         = "fullwipe"
+filesystem   = "btrfs"
+encrypt      = true
+efi_size_mb  = 512
+# Used only when mode = "manual"
+efi_device   = ""
+root_device  = ""
 
 [boot]
-bootloader       = "limine"
-# Chainload Windows Boot Manager when its EFI partition is found.
+# limine | systemd-boot
+bootloader        = "limine"
+# Add Windows chainload entry when a Windows EFI is present.
 chainload_windows = true
-kernels          = ["linux"]
+kernels           = ["linux"]
+# Enable Btrfs snapshot integration (snapper + boot menu support where available).
+snapshots         = true
 
 [packages]
-# "auto" = use the bundled offline repo when present, else online.
+# auto | online | offline
 source   = "auto"
-# Profiles are cumulative; "minimal" is always included.
+# Profile names map to packages/profiles/<name>.packages (cumulative).
 profiles = ["minimal", "dev"]
-browser  = "chromium"          # chromium | firefox | zen
+# chromium | firefox | zen
+browser  = "chromium"
 flatpak  = false
-# Explicit extra packages, applied after the profile union.
+aur      = false
+# Extra packages added on top of profiles (space significance irrelevant in array).
 extra    = []
-aur      = false               # build the optional AUR set post-install
 
 [agent]
-# L1: hardware detection + profile proposal. No model is bundled in the ISO.
-level            = 1
-# Optional cloud proposal (never required): set an API key at install time.
-cloud_proposal   = false
-snapshot_before  = true        # btrfs snapshot before any agent-driven change
+level           = 1
+snapshot_before = true
 
 [muze]
-theme_mode   = "wallpaper"     # wallpaper | theme | light
-theme_apps   = true
-bar_height   = 32
-bar_opacity  = 100
-# Profiles can be exported/imported so a reinstall restores the desktop.
-profile      = "default"
+theme_mode  = "wallpaper"
+theme_apps  = true
+bar_height  = 32
+bar_opacity = 100
+profile     = "default"

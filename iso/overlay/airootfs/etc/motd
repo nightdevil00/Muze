@@ -8,7 +8,7 @@
 
    Arch Linux + Hyprland + QuickShell  ·  wallpaper-driven colours
 
-   Live desktop boots automatically on tty1.
+   Live desktop autologins via SDDM on tty1. TTY2: root rescue shell.
    Install:  sudo muze-install        Repair:  sudo muze-repair
    Docs:     /opt/muze/README.md     Config:  /opt/muze/installer/install.toml.example
 

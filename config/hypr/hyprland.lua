@@ -43,6 +43,8 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE")
     hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP")
     hl.exec_cmd("muze-session-start")
+    -- Ensure the Muze QuickShell UI is running (uses ~/.config/quickshell).
+    hl.exec_cmd("sh -c 'pgrep -x qs >/dev/null 2>&1 || qs -n -d >/dev/null 2>&1 &'")
 end)
 
 ------------------------------------------------------------------------ input

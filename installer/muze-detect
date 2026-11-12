@@ -152,13 +152,14 @@ mode        = "$mode"
 filesystem  = "btrfs"
 encrypt     = $encrypt
 efi_size_mb = 512
-free_start  = ""
-free_end    = ""
+efi_device  = ""
+root_device = ""
 
 [boot]
 bootloader        = "limine"
 chainload_windows = $([[ -n "$win_efi" ]] && echo true || echo false)
 kernels           = ["linux"]
+snapshots         = true
 
 [packages]
 source   = "auto"

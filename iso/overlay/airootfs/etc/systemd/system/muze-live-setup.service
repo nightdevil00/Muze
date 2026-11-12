@@ -1,0 +1,17 @@
+[Unit]
+Description=Muze live environment setup
+After=systemd-udev-settle.service
+Wants=NetworkManager.service bluetooth.service
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/rfkill unblock wifi
+ExecStart=/usr/bin/rfkill unblock bluetooth
+ExecStart=/usr/bin/rfkill unblock all
+ExecStart=-/usr/bin/systemctl start NetworkManager.service
+ExecStart=-/usr/bin/systemctl start bluetooth.service
+
+[Install]
+WantedBy=multi-user.target

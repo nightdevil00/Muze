@@ -39,6 +39,9 @@ noto-fonts
 noto-fonts-emoji
 noto-fonts-cjk
 
+# Network
+networkmanager
+
 # Bluetooth (Quickshell's native Quickshell.Bluetooth talks to org.bluez)
 bluez
 bluez-utils
