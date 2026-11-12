@@ -174,6 +174,180 @@ disabled_colors={textMuted}, {bgSurface}, {bgBorder}, {bgBorder}, {bgSurface}, {
 os.makedirs(os.path.join(conf,'qt6ct','colors'), exist_ok=True)
 open(os.path.join(conf,'qt6ct','colors','muze.conf'),'w',encoding='utf-8').write(qt)
 
+# GTK 3/4 (for Nautilus and other GTK apps) - simplified mapping for preset palettes
+gtk4 = f""":root {{
+  --accent-bg-color: {accentPrimary};
+  --accent-fg-color: {bgBase};
+  --accent-color: {accentPrimary};
+  --destructive-bg-color: {accentRed};
+  --destructive-fg-color: {bgBase};
+  --destructive-color: {accentRed};
+  --success-bg-color: {accentGreen};
+  --success-fg-color: {bgBase};
+  --success-color: {accentGreen};
+  --warning-bg-color: {accentOrange};
+  --warning-fg-color: {bgBase};
+  --warning-color: {accentOrange};
+  --error-bg-color: {accentRed};
+  --error-fg-color: {bgBase};
+  --error-color: {accentRed};
+  --window-bg-color: {bgBase};
+  --window-fg-color: {textPrimary};
+  --view-bg-color: {bgBase};
+  --view-fg-color: {textPrimary};
+  --headerbar-bg-color: {bgSurface};
+  --headerbar-fg-color: {textPrimary};
+  --headerbar-border-color: {bgBorder};
+  --headerbar-backdrop-color: {bgBase};
+  --sidebar-bg-color: {bgSurface};
+  --sidebar-fg-color: {textPrimary};
+  --sidebar-backdrop-color: {bgBase};
+  --secondary-sidebar-bg-color: {bgSurface};
+  --secondary-sidebar-fg-color: {textPrimary};
+  --secondary-sidebar-backdrop-color: {bgBase};
+  --card-bg-color: {bgSurface};
+  --card-fg-color: {textPrimary};
+  --dialog-bg-color: {bgSurface};
+  --dialog-fg-color: {textPrimary};
+  --popover-bg-color: {bgSurface};
+  --popover-fg-color: {textPrimary};
+  --thumbnail-bg-color: {bgSurface};
+  --thumbnail-fg-color: {textPrimary};
+  --scrollbar-outline-color: {bgBorder};
+}}
+
+@define-color accent_bg_color {accentPrimary};
+@define-color accent_fg_color {bgBase};
+@define-color accent_color {accentPrimary};
+@define-color destructive_bg_color {accentRed};
+@define-color destructive_fg_color {bgBase};
+@define-color destructive_color {accentRed};
+@define-color success_bg_color {accentGreen};
+@define-color success_fg_color {bgBase};
+@define-color success_color {accentGreen};
+@define-color warning_bg_color {accentOrange};
+@define-color warning_fg_color {bgBase};
+@define-color warning_color {accentOrange};
+@define-color error_bg_color {accentRed};
+@define-color error_fg_color {bgBase};
+@define-color error_color {accentRed};
+@define-color window_bg_color {bgBase};
+@define-color window_fg_color {textPrimary};
+@define-color view_bg_color {bgBase};
+@define-color view_fg_color {textPrimary};
+@define-color headerbar_bg_color {bgSurface};
+@define-color headerbar_fg_color {textPrimary};
+@define-color headerbar_border_color {bgBorder};
+@define-color headerbar_backdrop_color {bgBase};
+@define-color sidebar_bg_color {bgSurface};
+@define-color sidebar_fg_color {textPrimary};
+@define-color sidebar_backdrop_color {bgBase};
+@define-color secondary_sidebar_bg_color {bgSurface};
+@define-color secondary_sidebar_fg_color {textPrimary};
+@define-color secondary_sidebar_backdrop_color {bgBase};
+@define-color card_bg_color {bgSurface};
+@define-color card_fg_color {textPrimary};
+@define-color dialog_bg_color {bgSurface};
+@define-color dialog_fg_color {textPrimary};
+@define-color popover_bg_color {bgSurface};
+@define-color popover_fg_color {textPrimary};
+@define-color thumbnail_bg_color {bgSurface};
+@define-color thumbnail_fg_color {textPrimary};
+@define-color scrollbar_outline_color {bgBorder};
+@define-color theme_bg_color {bgBase};
+@define-color theme_fg_color {textPrimary};
+@define-color theme_base_color {bgBase};
+@define-color theme_text_color {textPrimary};
+@define-color theme_selected_bg_color {accentPrimary};
+@define-color theme_selected_fg_color {bgBase};
+@define-color theme_unfocused_bg_color {bgBase};
+@define-color theme_unfocused_fg_color {textSecondary};
+@define-color theme_unfocused_base_color {bgBase};
+@define-color theme_unfocused_text_color {textSecondary};
+@define-color theme_unfocused_selected_bg_color {accentPrimary};
+@define-color theme_unfocused_selected_fg_color {bgBase};
+@define-color insensitive_bg_color {bgSurface};
+@define-color insensitive_fg_color {textMuted};
+@define-color insensitive_base_color {bgBase};
+@define-color borders {bgBorder};
+@define-color unfocused_borders {bgBorder};
+"""
+os.makedirs(os.path.join(conf,'gtk-4.0'), exist_ok=True)
+open(os.path.join(conf,'gtk-4.0','gtk.css'),'w',encoding='utf-8').write(gtk4)
+
+gtk3 = gtk4.replace(':root {', '/* GTK3 */').split('/* GTK3 */',1)[1] if ':root {' in gtk4 else gtk4
+# write a simpler gtk3 file (no :root vars)
+gtk3 = f"""@define-color accent_bg_color {accentPrimary};
+@define-color accent_fg_color {bgBase};
+@define-color accent_color {accentPrimary};
+@define-color destructive_bg_color {accentRed};
+@define-color destructive_fg_color {bgBase};
+@define-color destructive_color {accentRed};
+@define-color success_bg_color {accentGreen};
+@define-color success_fg_color {bgBase};
+@define-color success_color {accentGreen};
+@define-color warning_bg_color {accentOrange};
+@define-color warning_fg_color {bgBase};
+@define-color warning_color {accentOrange};
+@define-color error_bg_color {accentRed};
+@define-color error_fg_color {bgBase};
+@define-color error_color {accentRed};
+@define-color window_bg_color {bgBase};
+@define-color window_fg_color {textPrimary};
+@define-color view_bg_color {bgBase};
+@define-color view_fg_color {textPrimary};
+@define-color headerbar_bg_color {bgSurface};
+@define-color headerbar_fg_color {textPrimary};
+@define-color headerbar_border_color {bgBorder};
+@define-color headerbar_backdrop_color {bgBase};
+@define-color sidebar_bg_color {bgSurface};
+@define-color sidebar_fg_color {textPrimary};
+@define-color sidebar_backdrop_color {bgBase};
+@define-color card_bg_color {bgSurface};
+@define-color card_fg_color {textPrimary};
+@define-color dialog_bg_color {bgSurface};
+@define-color dialog_fg_color {textPrimary};
+@define-color popover_bg_color {bgSurface};
+@define-color popover_fg_color {textPrimary};
+@define-color theme_bg_color {bgBase};
+@define-color theme_fg_color {textPrimary};
+@define-color theme_base_color {bgBase};
+@define-color theme_text_color {textPrimary};
+@define-color theme_selected_bg_color {accentPrimary};
+@define-color theme_selected_fg_color {bgBase};
+@define-color insensitive_bg_color {bgSurface};
+@define-color insensitive_fg_color {textMuted};
+@define-color borders {bgBorder};
+@define-color unfocused_borders {bgBorder};
+"""
+os.makedirs(os.path.join(conf,'gtk-3.0'), exist_ok=True)
+open(os.path.join(conf,'gtk-3.0','gtk.css'),'w',encoding='utf-8').write(gtk3)
+
+# btop: ensure theme selection
+btop_conf = os.path.join(conf,'btop','btop.conf')
+os.makedirs(os.path.dirname(btop_conf), exist_ok=True)
+if os.path.exists(btop_conf):
+    try:
+        with open(btop_conf,'r',encoding='utf-8',errors='ignore') as f:
+            txt = f.read()
+        if 'color_theme' in txt:
+            lines = []
+            for line in txt.splitlines():
+                if line.strip().startswith('color_theme'):
+                    lines.append('color_theme = "muze"')
+                else:
+                    lines.append(line)
+            txt = '\n'.join(lines).rstrip('\n') + '\n'
+        else:
+            txt = txt.rstrip('\n') + '\ncolor_theme = "muze"\n'
+        with open(btop_conf,'w',encoding='utf-8') as f:
+            f.write(txt)
+    except Exception:
+        pass
+else:
+    with open(btop_conf,'w',encoding='utf-8') as f:
+        f.write('color_theme = "muze"\ntheme_background = False\n')
+
 # Reload hooks (best effort)
 for s in glob.glob('/tmp/kitty-*'):
     if os.path.exists(s):
