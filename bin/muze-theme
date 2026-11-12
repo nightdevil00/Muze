@@ -113,6 +113,14 @@ elif [[ -x "$HOME/.local/bin/muze-nautilus-palette" ]]; then
     "$HOME/.local/bin/muze-nautilus-palette" >/dev/null 2>&1 || true
 fi
 
+# Restart Nautilus so it reliably picks up the new theme/palette.
+if command -v nautilus >/dev/null 2>&1; then
+    nautilus -q >/dev/null 2>&1 || true
+    sleep 0.4
+    nautilus >/dev/null 2>&1 &
+    disown >/dev/null 2>&1 || true
+fi
+
 # 3. Third-party app templates (GTK), gated by the settings toggle
 if [[ "$(setting '.appearance.themeApps' 'true')" == "true" && -f "$APPS_CONF" ]]; then
     matugen image "$IMG" -c "$APPS_CONF" -m "$MODE" --prefer saturation -q \
