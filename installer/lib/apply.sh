@@ -400,9 +400,7 @@ if [[ "$BOOTLOADER" == "systemd-boot" ]]; then
   fi
   cp /boot/loader/entries/muze.conf /boot/loader/entries/muze-fallback.conf 2>/dev/null || true
   sed -i 's/initramfs-linux.img/initramfs-linux-fallback.img/' /boot/loader/entries/muze-fallback.conf 2>/dev/null || true
-  if [[ "$ENCRYPT" == "true" ]]; then
-    sed -i "s|options .*|options $CMDLINE_FB|" /boot/loader/entries/muze-fallback.conf 2>/dev/null || true
-  fi
+  sed -i "s|options .*|options $CMDLINE_FB|" /boot/loader/entries/muze-fallback.conf 2>/dev/null || true
 else
   # limine
   mkdir -p /boot/EFI/limine /boot/EFI/BOOT

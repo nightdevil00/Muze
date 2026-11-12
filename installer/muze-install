@@ -270,7 +270,13 @@ detect_env() {
 
 list_disks() {
     # name|size|model lines
-    lsblk -dpno NAME,SIZE,MODEL,TYPE 2>/dev/null | awk '$4=="disk"{ $4=""; sub(/[[:space:]]+$/,""); gsub(/[[:space:]]+/,"|"); print }' \
+    lsblk -dpno NAME,SIZE,MODEL,TYPE 2>/dev/null | awk '
+        $NF=="disk" {
+            name=$1; size=$2; $1=""; $2=""; $NF="";
+            sub(/^[[:space:]]+/,""); sub(/[[:space:]]+$/,"");
+            gsub(/[[:space:]]+/," ",$0);
+            print name "|" size "|" $0
+        }' \
         | grep -E '^/dev/(sd|hd|vd|nvme|mmcblk|xv)' || true
 }
 
@@ -367,11 +373,18 @@ else
                 else
                     # treat as search/manual
                     region=""
-                    if list_timezones | grep -qx "$tz_in"; then CFG_SYSTEM_TIMEZONE="$tz_in"; break 2; fi
+                    if list_timezones | grep -qx "$tz_in"; then
+                        CFG_SYSTEM_TIMEZONE="$tz_in"
+                        region=""
+                        tz_done=1
+                        break
+                    fi
                     printf '  Not found. Try a number or exact region/timezone.\n'
                 fi
             done
-            if [[ -n "${region:-}" ]]; then
+            if [[ ${tz_done:-0} -eq 1 ]]; then
+                :
+            elif [[ -n "${region:-}" ]]; then
                 mapfile -t _tzs < <(list_timezones | grep "^${region}/" || true)
                 if [[ ${#_tzs[@]} -eq 0 ]]; then
                     CFG_SYSTEM_TIMEZONE="$region"
