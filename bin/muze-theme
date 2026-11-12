@@ -106,6 +106,13 @@ if [[ -f "$CONF_DIR/hypr/hyprlock.conf" ]]; then
     ' "$CONF_DIR/hypr/hyprlock.conf" > "$tmp_hl" && mv "$tmp_hl" "$CONF_DIR/hypr/hyprlock.conf"
 fi
 
+# Nautilus/libadwaita palette (live-reloaded by Muze nautilus-python extension)
+if command -v muze-nautilus-palette >/dev/null 2>&1; then
+    muze-nautilus-palette >/dev/null 2>&1 || true
+elif [[ -x "$HOME/.local/bin/muze-nautilus-palette" ]]; then
+    "$HOME/.local/bin/muze-nautilus-palette" >/dev/null 2>&1 || true
+fi
+
 # 3. Third-party app templates (GTK), gated by the settings toggle
 if [[ "$(setting '.appearance.themeApps' 'true')" == "true" && -f "$APPS_CONF" ]]; then
     matugen image "$IMG" -c "$APPS_CONF" -m "$MODE" --prefer saturation -q \

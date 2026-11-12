@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""Generate Nautilus/libadwaita palette CSS for Muze.
+
+Reads Muze colors (matugen Material 3 roles from ~/.cache/muze/colors.json,
+or falls back to wallpaper-theme/preset palette JSON) and writes
+~/.cache/muze/gtk/nautilus.css, which is hot-reloaded by the Muze Nautilus
+extension (nautilus-python) in running Nautilus windows.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+CONF = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
+CACHE = Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache")
+OUT_DIR = CACHE / "muze" / "gtk"
+OUT_FILE = OUT_DIR / "nautilus.css"
+MATUGEN_COLORS = CACHE / "muze" / "colors.json"
+WALLPAPER_THEME = CONF / "quickshell" / "theme-switcher" / "wallpaper-theme.json"
+
+
+def hex_to_rgb(h):
+    h = h.strip().lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        return None
+    try:
+        return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+    except Exception:
+        return None
+
+
+def luminance(h):
+    rgb = hex_to_rgb(h)
+    if not rgb:
+        return 0.0
+    def lin(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = [lin(x) for x in rgb]
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def rgba(h, a):
+    rgb = hex_to_rgb(h)
+    if not rgb:
+        return h
+    return f"rgba({rgb[0]},{rgb[1]},{rgb[2]},{a})"
+
+
+def load_json(p):
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else None
+    except Exception:
+        return None
+
+
+def from_matugen(d):
+    # Material 3 roles from matugen colors.json
+    if "surface" not in d or "primary" not in d:
+        return None
+    bg = d.get("surface") or d.get("background") or "#1a1b26"
+    fg = d.get("on_surface") or d.get("onSurface") or d.get("foreground") or "#c0caf5"
+    dark_bg = d.get("surface_container_low") or d.get("surfaceContainerLow") or bg
+    darker_bg = d.get("surface_container_lowest") or d.get("surfaceContainerLowest") or dark_bg
+    lighter_bg = d.get("surface_container_high") or d.get("surfaceContainerHigh") or d.get("surface_container") or bg
+    header = d.get("surface_container") or d.get("surfaceContainer") or bg
+    accent = d.get("primary") or "#7aa2f7"
+    accent_fg = d.get("on_primary") or d.get("onPrimary") or ("#000000" if luminance(accent) > 0.45 else "#ffffff")
+    muted = d.get("on_surface_variant") or d.get("onSurfaceVariant") or d.get("outline") or fg
+    red = d.get("error") or "#f7768e"
+    green = d.get("secondary") or "#9ece6a"
+    yellow = d.get("tertiary") or "#ff9e64"
+    border = d.get("outline_variant") or d.get("outlineVariant") or muted
+    mode = "light" if luminance(bg) > 0.5 else "dark"
+    return {
+        "background": bg, "foreground": fg, "dark_bg": dark_bg, "darker_bg": darker_bg,
+        "lighter_bg": lighter_bg, "header": header, "accent": accent, "accent_fg": accent_fg,
+        "muted": muted, "red": red, "green": green, "yellow": yellow, "border": border,
+        "mode": mode, "name": "matugen"
+    }
+
+
+def from_theme_palette(d):
+    # wallpaper-theme.json or preset theme shape
+    bg = d.get("bgBase") or d.get("background")
+    fg = d.get("textPrimary") or d.get("foreground")
+    if not bg or not fg:
+        return None
+    dark_bg = d.get("bgSurface") or bg
+    darker_bg = d.get("bgHover") or dark_bg
+    lighter_bg = d.get("bgSelected") or dark_bg
+    accent = d.get("accentPrimary") or d.get("primary") or "#7aa2f7"
+    muted = d.get("textMuted") or d.get("textSecondary") or fg
+    red = d.get("accentRed") or d.get("error") or "#f7768e"
+    green = d.get("accentGreen") or d.get("secondary") or "#9ece6a"
+    yellow = d.get("accentOrange") or d.get("tertiary") or "#ff9e64"
+    border = d.get("bgBorder") or muted
+    mode = "light" if luminance(bg) > 0.5 else "dark"
+    accent_fg = "#000000" if luminance(accent) > 0.45 else "#ffffff"
+    return {
+        "background": bg, "foreground": fg, "dark_bg": dark_bg, "darker_bg": darker_bg,
+        "lighter_bg": lighter_bg, "header": dark_bg, "accent": accent, "accent_fg": accent_fg,
+        "muted": muted, "red": red, "green": green, "yellow": yellow, "border": border,
+        "mode": mode, "name": d.get("name") or "theme"
+    }
+
+
+def pick_palette():
+    # explicit path arg or stdin
+    if len(sys.argv) > 1 and sys.argv[1]:
+        if sys.argv[1] == "-":
+            try:
+                d = json.load(sys.stdin)
+                if isinstance(d, dict):
+                    return from_matugen(d) or from_theme_palette(d)
+            except Exception:
+                return None
+        else:
+            d = load_json(sys.argv[1])
+            if d:
+                return from_matugen(d) or from_theme_palette(d)
+    # prefer matugen material colors
+    d = load_json(MATUGEN_COLORS)
+    if d:
+        p = from_matugen(d)
+        if p:
+            return p
+    d = load_json(WALLPAPER_THEME)
+    if d:
+        p = from_matugen(d) or from_theme_palette(d)
+        if p:
+            return p
+    return None
+
+
+def main():
+    p = pick_palette()
+    if not p:
+        return 0
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    shade = "0.18" if p["mode"] == "light" else "0.36"
+    scrollbar = "rgba(0,0,0,0.15)" if p["mode"] == "light" else "rgba(255,255,255,0.12)"
+    lines = [
+        "/* Generated by Muze (muze-nautilus-palette). Do not edit. */",
+        f"/* Source: {p['name']} mode={p['mode']} */",
+        "",
+        f"@define-color window_bg_color {p['background']};",
+        f"@define-color window_fg_color {p['foreground']};",
+        f"@define-color view_bg_color {p['background']};",
+        f"@define-color view_fg_color {p['foreground']};",
+        f"@define-color headerbar_bg_color {p['header']};",
+        f"@define-color headerbar_fg_color {p['foreground']};",
+        f"@define-color headerbar_backdrop_color {p['dark_bg']};",
+        f"@define-color headerbar_shade_color {rgba(p['border'], 0.36)};",
+        f"@define-color headerbar_darker_shade_color {rgba(p['border'], 0.6)};",
+        f"@define-color sidebar_bg_color {p['dark_bg']};",
+        f"@define-color sidebar_fg_color {p['foreground']};",
+        f"@define-color sidebar_backdrop_color {p['darker_bg']};",
+        f"@define-color sidebar_shade_color {rgba(p['border'], 0.25)};",
+        f"@define-color sidebar_border_color {rgba(p['border'], 0.36)};",
+        f"@define-color secondary_sidebar_bg_color {p['darker_bg']};",
+        f"@define-color secondary_sidebar_fg_color {p['foreground']};",
+        f"@define-color secondary_sidebar_backdrop_color {p['darker_bg']};",
+        f"@define-color card_bg_color {p['lighter_bg']};",
+        f"@define-color card_fg_color {p['foreground']};",
+        f"@define-color card_shade_color {rgba(p['border'], 0.25)};",
+        f"@define-color dialog_bg_color {p['lighter_bg']};",
+        f"@define-color dialog_fg_color {p['foreground']};",
+        f"@define-color popover_bg_color {p['lighter_bg']};",
+        f"@define-color popover_fg_color {p['foreground']};",
+        f"@define-color thumbnail_bg_color {p['lighter_bg']};",
+        f"@define-color thumbnail_fg_color {p['muted']};",
+        f"@define-color accent_bg_color {p['accent']};",
+        f"@define-color accent_fg_color {p['accent_fg']};",
+        f"@define-color accent_color {p['accent']};",
+        f"@define-color destructive_bg_color {p['red']};",
+        f"@define-color destructive_fg_color #ffffff;",
+        f"@define-color destructive_color {p['red']};",
+        f"@define-color success_bg_color {p['green']};",
+        f"@define-color success_fg_color #ffffff;",
+        f"@define-color success_color {p['green']};",
+        f"@define-color warning_bg_color {p['yellow']};",
+        f"@define-color warning_fg_color {p['background']};",
+        f"@define-color warning_color {p['yellow']};",
+        f"@define-color error_bg_color {p['red']};",
+        f"@define-color error_fg_color #ffffff;",
+        f"@define-color error_color {p['red']};",
+        f"@define-color shade_color rgba(0,0,0,{shade});",
+        f"@define-color scrollbar_outline_color {scrollbar};",
+        "",
+    ]
+    tmp = OUT_FILE.with_suffix(".css.tmp")
+    tmp.write_text("\n".join(lines), encoding="utf-8")
+    os.replace(tmp, OUT_FILE)
+    print(str(OUT_FILE))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
