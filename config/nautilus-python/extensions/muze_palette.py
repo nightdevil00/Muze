@@ -18,6 +18,7 @@ import os
 import gi
 
 gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
 gi.require_version("Nautilus", "4.1")
 
 from gi.repository import GLib, Gdk, Gio, GObject, Gtk, Nautilus  # noqa: E402
